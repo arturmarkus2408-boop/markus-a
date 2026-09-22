@@ -11,7 +11,14 @@ const Cloud = {
       Cloud.sb = window.supabase.createClient(cfg.sbUrl, cfg.sbKey, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'markus_auth' } });
       const { data } = await Cloud.sb.auth.getSession();
       Cloud.user = data.session ? data.session.user : null;
-      Cloud.sb.auth.onAuthStateChange((_e, sess) => { Cloud.user = sess ? sess.user : null; if (S.route === 'settings') queueRender(); });
+      const fromAuthLink = /access_token=|type=(magiclink|recovery|signup|invite)/.test(location.hash);
+      Cloud.sb.auth.onAuthStateChange((ev, sess) => {
+        const wasLoggedOut = !Cloud.user;
+        Cloud.user = sess ? sess.user : null;
+        if (ev === 'SIGNED_IN' && Cloud.user && wasLoggedOut && fromAuthLink) {
+          Cloud.loadProfile().then(() => { toast('Вход выполнен ✓'); go('settings'); });
+        } else if (S.route === 'settings') queueRender();
+      });
       if (Cloud.user) { await Cloud.loadProfile(); Cloud.sync(); }
     } catch (e) { Cloud.lastError = e.message; }
   },
