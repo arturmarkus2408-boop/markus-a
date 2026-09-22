@@ -1,0 +1,22 @@
+{
+  "name": "MARKUS-A — AI-помощник",
+  "short_name": "MARKUS-A",
+  "description": "Персональный AI-помощник: календарь, задачи, встречи, записи, заметки, документы",
+  "lang": "ru",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d0e2b",
+  "theme_color": "#5b4dff",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Сказать MARKUS-A", "short_name": "Голос", "url": "./index.html#voice", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Новая задача", "short_name": "Задача", "url": "./index.html#new", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Запись встречи", "short_name": "Запись", "url": "./index.html#record", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}
