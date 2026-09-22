@@ -4,7 +4,7 @@
   НЕ вписывайте сюда ключ Gemini — его вводят в самом приложении (Настройки → AI).
 */
 window.MARKUS_CONFIG = {
-  SUPABASE_URL: '',   // например: https://abcdefgh.supabase.co
-  SUPABASE_KEY: '',   // Publishable key (sb_publishable_...) или anon public key
-  TELEGRAM_BOT: ''    // имя вашего бота без @, например: markus_a_timur_bot
+  SUPABASE_URL: 'https://jkoqpoyyuckwaghwjhyc.supabase.co',
+  SUPABASE_KEY: 'sb_publishable_Phz0Gqx9-i9EelMPONvrIw_rpVVKboa',
+  TELEGRAM_BOT: 'MarkusJW_bot'
 };
