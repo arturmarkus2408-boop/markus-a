@@ -70,6 +70,9 @@ async function handleAction(action, id) {
 }
 function handleHash() {
   const h = location.hash.replace(/^#/, ''); if (!h) return;
+  // Supabase auth links (magic link, password recovery, signup confirm) put tokens in the
+  // hash and need to parse it themselves — never strip it out from under them.
+  if (/access_token=|refresh_token=|type=(magiclink|recovery|signup|invite)|error_description=/.test(h)) return;
   history.replaceState(null, '', location.pathname + location.search);
   const [action, id] = h.split('/');
   handleAction(action === 'item' ? 'open' : action, id);
