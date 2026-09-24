@@ -4,14 +4,16 @@ const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.m
 
 function nowContext() {
   const d = new Date(), off = -d.getTimezoneOffset() / 60;
-  return `Сейчас: ${D.fmt(d)} ${D.nowTime()}, ${D.DOWF[d.getDay()]}. Часовой пояс UTC${off >= 0 ? '+' : ''}${off}.`;
+  return `Сейчас: ${D.fmt(d)} ${D.nowTime()}, ${D.dowFull(d.getDay())}. Часовой пояс UTC${off >= 0 ? '+' : ''}${off}.`;
 }
+function outLang() { const L = langCode(); return L === 'ru' ? 'русском' : ({ en: 'English', uz: "o'zbek (lotin)", tr: 'Türkçe', de: 'Deutsch' }[L] || langName(L)); }
+const IN_LANG = () => langCode() === 'ru' ? 'по-русски' : 'на языке: ' + outLang() + ' (язык интерфейса пользователя)';
 function parseJSON(t) {
   t = String(t || '').replace(/```json|```/g, '').trim();
-  try { return JSON.parse(t); } catch (e) { const m = t.match(/\{[\s\S]*\}/); if (m) return JSON.parse(m[0]); throw new Error('AI вернул непонятный ответ'); }
+  try { return JSON.parse(t); } catch (e) { const m = t.match(/\{[\s\S]*\}/); if (m) return JSON.parse(m[0]); throw new Error(t('AI вернул непонятный ответ')); }
 }
 
-const CMD_PROMPT = `Ты — модуль понимания команд личного ассистента MARKUS-A. Пользователь говорит или пишет по-русски (иногда по-узбекски). Разбери команду и верни ТОЛЬКО JSON:
+const CMD_PROMPT = `Ты — модуль понимания команд личного ассистента MARKUS-A. Пользователь говорит или пишет на любом языке (русский, узбекский, английский, турецкий, немецкий и др.). title и noteText пиши на том же языке, на котором сказана команда. Разбери команду и верни ТОЛЬКО JSON:
 {
 "intent": "create_task" | "create_meeting" | "create_note" | "query" | "find_slot" | "unknown",
 "title": "краткое название действия с заглавной буквы, без даты и времени",
@@ -49,7 +51,7 @@ const CMD_PROMPT = `Ты — модуль понимания команд лич
 const AI = {
   ready() { return !!(S.set.aiKey && S.set.aiKey.trim()); },
   async call(parts, { json = false, system, temp = 0.2 } = {}) {
-    if (!AI.ready()) throw new Error('Добавьте ключ Gemini в Настройках → AI');
+    if (!AI.ready()) throw new Error(t('Добавьте ключ Gemini в Настройках → AI'));
     const model = (S.set.aiModel || 'gemini-2.5-flash').trim();
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(S.set.aiKey.trim())}`;
     const body = { contents: [{ role: 'user', parts }], generationConfig: { temperature: temp } };
@@ -57,16 +59,16 @@ const AI = {
     if (system) body.systemInstruction = { parts: [{ text: system }] };
     let r;
     try { r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
-    catch (e) { throw new Error('Нет связи с AI. Проверьте интернет.'); }
+    catch (e) { throw new Error(t('Нет связи с AI. Проверьте интернет.')); }
     if (!r.ok) {
       let m = ''; try { m = (await r.json()).error.message; } catch (e) { }
-      if (r.status === 429) throw new Error('Лимит бесплатного AI на сейчас исчерпан. Попробуйте через минуту.');
-      if (r.status === 400 && /API key/i.test(m)) throw new Error('Неверный ключ Gemini. Проверьте Настройки → AI.');
+      if (r.status === 429) throw new Error(t('Лимит бесплатного AI на сейчас исчерпан. Попробуйте через минуту.'));
+      if (r.status === 400 && /API key/i.test(m)) throw new Error(t('Неверный ключ Gemini. Проверьте Настройки → AI.'));
       throw new Error('AI ' + r.status + ': ' + m);
     }
     const d = await r.json();
     const text = ((d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts) || []).map(p => p.text || '').join('');
-    if (!text) throw new Error('AI вернул пустой ответ');
+    if (!text) throw new Error(t('AI вернул пустой ответ'));
     return json ? parseJSON(text) : text.trim();
   },
 
@@ -76,7 +78,7 @@ const AI = {
   },
 
   async transcribe(blob, mime, meeting) {
-    if (blob.size > 14.5 * 1048576) throw new Error('Запись больше 14 МБ (≈1 ч 40 мин) — бесплатный AI такую за раз не примет.');
+    if (blob.size > 14.5 * 1048576) throw new Error(t('Запись больше 14 МБ (≈1 ч 40 мин) — бесплатный AI такую за раз не примет.'));
     const data = await b64(blob);
     const base = (mime || blob.type || 'audio/webm').split(';')[0];
     const tries = [base];
@@ -99,7 +101,7 @@ const AI = {
 Проанализируй стенограмму и верни ТОЛЬКО JSON:
 {"summary":{"short":["3–10 главных мыслей"],"decisions":["что решили"],"commitments":[{"who":"кто","what":"что должен сделать","due":"срок или пусто"}],"deadlines":["даты и сроки, что к ним"],"important":["что важно запомнить: суммы, условия, реквизиты"],"risks":["что осталось нерешённым, риски"],"next":["следующие шаги"]},
 "tasks":[{"title":"конкретное действие, например «Отправить договор Алишеру»","date":"YYYY-MM-DD или null","start":"HH:MM или null","end":"HH:MM или null","dueTime":"HH:MM или null — если сказано «до 15 часов»","priority":"normal|high|critical","who":"кто исполняет"}]}
-Относительные даты («завтра», «в пятницу») считай от даты встречи. В tasks включай только реальные поручения и обещания. Пиши по-русски.
+Относительные даты («завтра», «в пятницу») считай от даты встречи. В tasks включай только реальные поручения и обещания. Пиши ${IN_LANG()}.
 СТЕНОГРАММА:
 ${(m.transcript || '').slice(0, 400000)}`;
     return AI.call([{ text: prompt }], { json: true, temp: 0.1 });
@@ -107,9 +109,9 @@ ${(m.transcript || '').slice(0, 400000)}`;
 
   async docParts(f) {
     const blob = await getFileBlob(f);
-    if (!blob) throw new Error('Файл не найден на этом устройстве');
+    if (!blob) throw new Error(t('Файл не найден на этом устройстве'));
     const t = (f.type || '').toLowerCase(), n = (f.name || '').toLowerCase();
-    const inline = async mt => { if (blob.size > 14 * 1048576) throw new Error('Файл больше 14 МБ — слишком большой для AI'); return [{ inline_data: { mime_type: mt, data: await b64(blob) } }]; };
+    const inline = async mt => { if (blob.size > 14 * 1048576) throw new Error(t('Файл больше 14 МБ — слишком большой для AI')); return [{ inline_data: { mime_type: mt, data: await b64(blob) } }]; };
     if (t === 'application/pdf' || n.endsWith('.pdf')) return inline('application/pdf');
     if (t.startsWith('image/')) return inline(t);
     if (t.startsWith('audio/')) return inline(t.split(';')[0]);
@@ -121,17 +123,17 @@ ${(m.transcript || '').slice(0, 400000)}`;
       return [{ text: s.slice(0, 200000) }];
     }
     if (t.startsWith('text/') || /\.(txt|md|csv|json|xml|html?)$/.test(n)) return [{ text: (await blob.text()).slice(0, 200000) }];
-    if (n.endsWith('.doc')) throw new Error('Старый формат .doc AI не читает — сохраните как .docx или PDF');
-    throw new Error('Этот формат AI пока не читает');
+    if (n.endsWith('.doc')) throw new Error(t('Старый формат .doc AI не читает — сохраните как .docx или PDF'));
+    throw new Error(t('Этот формат AI пока не читает'));
   },
   async docSummary(f) {
     const parts = await AI.docParts(f);
-    parts.push({ text: `Документ «${f.name}». Кратко перескажи по-русски: что это за документ, стороны, предмет, ключевые условия, суммы, сроки, обязательства сторон, на что обратить внимание. Без вступлений.` });
+    parts.push({ text: `Документ «${f.name}». Кратко перескажи ${IN_LANG()}: что это за документ, стороны, предмет, ключевые условия, суммы, сроки, обязательства сторон, на что обратить внимание. Без вступлений.` });
     return AI.call(parts, { temp: 0.2 });
   },
   async docAsk(f, q) {
     const parts = await AI.docParts(f);
-    parts.push({ text: `Документ «${f.name}». Ответь на вопрос по-русски, опираясь только на документ. Если ответа в документе нет — так и скажи. Вопрос: ${q}` });
+    parts.push({ text: `Документ «${f.name}». Ответь на вопрос ${IN_LANG()}, опираясь только на документ. Если ответа в документе нет — так и скажи. Вопрос: ${q}` });
     return AI.call(parts, { temp: 0.2 });
   },
   improveText(t) { return AI.call([{ text: 'Приведи надиктованный текст заметки в аккуратный вид: исправь ошибки распознавания, расставь знаки препинания, разбей на абзацы или пункты при необходимости. Смысл не меняй, ничего не добавляй. Верни только текст.\n\n' + t }], { temp: 0.1 }); },
@@ -156,6 +158,6 @@ ${(m.transcript || '').slice(0, 400000)}`;
       return s;
     };
     const ctx = set.map(line).join('\n').slice(0, 150000);
-    return AI.call([{ text: `${nowContext()}\nНиже — данные пользователя из его планировщика MARKUS-A.\n${ctx || '(данных пока нет)'}\n\nВопрос: ${q}\nОтветь кратко и по делу, по-русски, опираясь только на эти данные. Называй даты и названия. Если данных нет — скажи прямо.` }], { temp: 0.2 });
+    return AI.call([{ text: `${nowContext()}\nНиже — данные пользователя из его планировщика MARKUS-A.\n${ctx || '(данных пока нет)'}\n\nВопрос: ${q}\nОтветь кратко и по делу, ${IN_LANG()}, опираясь только на эти данные. Называй даты и названия. Если данных нет — скажи прямо.` }], { temp: 0.2 });
   }
 };

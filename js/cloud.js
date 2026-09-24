@@ -11,14 +11,20 @@ const Cloud = {
       Cloud.sb = window.supabase.createClient(cfg.sbUrl, cfg.sbKey, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'markus_auth' } });
       const { data } = await Cloud.sb.auth.getSession();
       Cloud.user = data.session ? data.session.user : null;
-      const fromAuthLink = /access_token=|type=(magiclink|recovery|signup|invite)/.test(location.hash);
+      const fromAuthLink = /access_token=|type=(magiclink|recovery|signup|invite)|[?&]code=/.test(location.hash + location.search);
+      const recovery = /type=recovery/.test(location.hash + location.search);
       Cloud.sb.auth.onAuthStateChange((ev, sess) => {
         const wasLoggedOut = !Cloud.user;
         Cloud.user = sess ? sess.user : null;
-        if (ev === 'SIGNED_IN' && Cloud.user && wasLoggedOut && fromAuthLink) {
-          Cloud.loadProfile().then(() => { toast('Вход выполнен ✓'); go('settings'); });
+        if (ev === 'PASSWORD_RECOVERY' || (recovery && ev === 'SIGNED_IN' && !Cloud._askedPw)) {
+          Cloud._askedPw = true;
+          setTimeout(() => Cloud.loadProfile().then(() => { go('settings'); Cloud.askNewPassword(); }), 300);
+        } else if (ev === 'SIGNED_IN' && Cloud.user && wasLoggedOut && fromAuthLink) {
+          Cloud.loadProfile().then(() => { toast(t('Вход выполнен ✓')); go('settings'); Cloud.sync(true); });
         } else if (S.route === 'settings') queueRender();
+        if (fromAuthLink && /access_token=/.test(location.hash) && sess) history.replaceState(null, '', location.pathname);
       });
+      if (Cloud.user && recovery && !Cloud._askedPw) { Cloud._askedPw = true; setTimeout(() => { go('settings'); Cloud.askNewPassword(); }, 300); }
       if (Cloud.user) { await Cloud.loadProfile(); Cloud.sync(); }
     } catch (e) { Cloud.lastError = e.message; }
   },
@@ -27,19 +33,45 @@ const Cloud = {
   /* ---------- auth ---------- */
   async signIn(email, pass) {
     if (!Cloud.sb) await Cloud.init();
-    if (!Cloud.sb) throw new Error('Облако не настроено (config.js)');
+    if (!Cloud.sb) throw new Error(t('Облако не настроено (config.js)'));
     const { data, error } = await Cloud.sb.auth.signInWithPassword({ email, password: pass });
-    if (error) throw new Error(error.message === 'Invalid login credentials' ? 'Неверный email или пароль' : error.message);
+    if (error) throw new Error(error.message === 'Invalid login credentials' ? t('Неверный email или пароль') : error.message);
     Cloud.user = data.user; await Cloud.loadProfile(); await Cloud.sync(true);
   },
   async signUp(email, pass) {
     if (!Cloud.sb) await Cloud.init();
-    if (!Cloud.sb) throw new Error('Облако не настроено (config.js)');
+    if (!Cloud.sb) throw new Error(t('Облако не настроено (config.js)'));
     const { data, error } = await Cloud.sb.auth.signUp({ email, password: pass });
     if (error) throw new Error(error.message);
     if (!data.session) return 'confirm';
     Cloud.user = data.user; await Cloud.loadProfile(); await Cloud.sync(true);
     return 'ok';
+  },
+  appUrl() { return location.origin + location.pathname.replace(/index\.html$/, ''); },
+  async magicLink(email) {
+    if (!Cloud.sb) await Cloud.init();
+    if (!Cloud.sb) throw new Error(t('Облако не настроено (config.js)'));
+    const { error } = await Cloud.sb.auth.signInWithOtp({ email, options: { emailRedirectTo: Cloud.appUrl(), shouldCreateUser: false } });
+    if (error) throw new Error(/rate|limit|seconds/i.test(error.message) ? t('Слишком много писем. Бесплатный лимит — около 2 писем в час. Попробуйте позже.') : error.message);
+  },
+  async resetPassword(email) {
+    if (!Cloud.sb) await Cloud.init();
+    if (!Cloud.sb) throw new Error(t('Облако не настроено (config.js)'));
+    const { error } = await Cloud.sb.auth.resetPasswordForEmail(email, { redirectTo: Cloud.appUrl() });
+    if (error) throw new Error(/rate|limit|seconds/i.test(error.message) ? t('Слишком много писем. Бесплатный лимит — около 2 писем в час. Попробуйте позже.') : error.message);
+  },
+  async setPassword(pw) {
+    if (!Cloud.user) throw new Error(t('Сначала войдите в аккаунт'));
+    if (!pw || pw.length < 6) throw new Error(t('Пароль — минимум 6 символов'));
+    const { error } = await Cloud.sb.auth.updateUser({ password: pw });
+    if (error) throw new Error(error.message);
+  },
+  async askNewPassword() {
+    const pw = await dialog({ title: t('Придумайте новый пароль'), text: t('Вы вошли по ссылке из письма. Задайте новый пароль — дальше входите с ним.'), html: `<input class="inp" id="np1" type="text" placeholder="${t('Новый пароль (минимум 6 символов)')}" autocomplete="new-password" style="margin-top:8px">`,
+      buttons: [{ l: t('Сохранить пароль'), v: sh => { const x = sh.querySelector('#np1').value.trim(); if (x.length < 6) { toast(t('Пароль — минимум 6 символов')); return false; } return x; }, p: 1 }, { l: t('Позже'), v: null }],
+      onMount: sh => setTimeout(() => { const i = sh.querySelector('#np1'); if (i) i.focus(); }, 250) });
+    if (!pw) return;
+    try { await Cloud.setPassword(pw); toast(t('Пароль изменён ✓ Запомните его'), 5000); } catch (e) { toast(e.message, 5000); }
   },
   async signOut() { if (Cloud.sb) await Cloud.sb.auth.signOut(); Cloud.user = null; Cloud.profile = null; await DB.del('meta', 'lastPull'); },
 
@@ -57,11 +89,23 @@ const Cloud = {
     Cloud.profile = data || null;
     if (Cloud.profile && Cloud.profile.ai_key && !S.set.aiKey) { S.set.aiKey = Cloud.profile.ai_key; saveSettings(); }
     if (Cloud.profile && !Cloud.profile.ai_key && S.set.aiKey) Cloud.saveProfile({ ai_key: S.set.aiKey });
+    Cloud.savePrefs();
   },
   async saveProfile(patch) {
     if (!Cloud.user) return;
-    const { data } = await Cloud.sb.from('profiles').update(patch).eq('user_id', Cloud.user.id).select().maybeSingle();
+    const { data, error } = await Cloud.sb.from('profiles').update(patch).eq('user_id', Cloud.user.id).select().maybeSingle();
     if (data) Cloud.profile = data;
+    return error;
+  },
+  /* reminder times and language are also used by the Telegram bot */
+  savePrefs() {
+    clearTimeout(Cloud._pt);
+    Cloud._pt = setTimeout(async () => {
+      if (!Cloud.user || !Cloud.sb) return;
+      const st = S.set, prefs = { morningTime: st.morningTime, eveTime: st.eveTime, dayEnd: st.dayEnd, nagHours: st.nagHours, lang: st.lang };
+      const err = await Cloud.saveProfile({ prefs, lang: st.lang });
+      if (err) await Cloud.saveProfile({ lang: st.lang }).catch(() => { }); // migration not run yet — ignore
+    }, 800);
   },
 
   /* ---------- sync ---------- */
@@ -69,7 +113,7 @@ const Cloud = {
     const c = Object.assign({}, it); delete c._dirty;
     return {
       id: it.id, user_id: Cloud.user.id, kind: it.kind, data: c, date: it.date || null,
-      remind_at: nextRemindISO(it), end_at: (it.kind !== 'note' && it.date) ? endAt(it).toISOString() : null,
+      remind_at: nextRemindISO(it), end_at: (isTaskKind(it) && it.date) ? endAt(it).toISOString() : null,
       deleted: !!it.deleted, updated_at: it.updated
     };
   },
@@ -126,10 +170,10 @@ const Cloud = {
       await DB.put('meta', since, 'lastPull');
       Cloud.lastSync = new Date(); Cloud.lastError = '';
       if (changed) queueRender();
-      if (verbose) toast('Синхронизировано ✓');
+      if (verbose) toast(t('Синхронизировано ✓'));
     } catch (e) {
       Cloud.lastError = e.message || String(e);
-      if (verbose) toast('Ошибка синхронизации: ' + Cloud.lastError, 4000);
+      if (verbose) toast(t('Ошибка синхронизации') + ': ' + Cloud.lastError, 4000);
     } finally { Cloud.busy = false; }
   },
 
@@ -141,16 +185,16 @@ const Cloud = {
   },
   async unlinkTelegram() { await Cloud.saveProfile({ tg_chat_id: null, tg_code: null }); },
   async sendTelegram(text) {
-    if (!Cloud.user) throw new Error('Войдите в аккаунт (Настройки → Облако)');
-    if (!Cloud.profile || !Cloud.profile.tg_chat_id) throw new Error('Telegram не подключён (Настройки → Telegram)');
+    if (!Cloud.user) throw new Error(t('Войдите в аккаунт (Настройки → Облако)'));
+    if (!Cloud.profile || !Cloud.profile.tg_chat_id) throw new Error(t('Telegram не подключён (Настройки → Telegram)'));
     const { data, error } = await Cloud.sb.functions.invoke('telegram-bot', { body: { action: 'send', text } });
-    if (error) throw new Error('Не удалось отправить: ' + error.message);
+    if (error) throw new Error(t('Не удалось отправить') + ': ' + (Cloud._fnErr ? Cloud._fnErr : error.message));
     if (data && data.error) throw new Error(data.error);
   },
 
   /* ---------- sharing ---------- */
   async createShare(it, { permission, days, code }) {
-    if (!Cloud.user) throw new Error('Для ссылок нужен вход в облако');
+    if (!Cloud.user) throw new Error(t('Для ссылок нужен вход в облако'));
     Cloud.schedule(); await Cloud.sync();
     const secs = days ? days * 86400 : 365 * 86400;
     const files = [];
@@ -163,7 +207,7 @@ const Cloud = {
     }
     const snap = {
       kind: it.kind, title: it.title, desc: it.desc, date: it.date, start: it.start, end: it.end, place: it.place,
-      participants: it.participants, priority: it.priority, category: catOf(it).name, files,
+      participants: it.participants, priority: it.priority, category: catName(catOf(it)), files, location: it.location || '', lang: S.set.lang,
       summary: it.summary ? { short: it.summary.short, decisions: it.summary.decisions, next: it.summary.next } : null,
       owner: S.set.name || ''
     };

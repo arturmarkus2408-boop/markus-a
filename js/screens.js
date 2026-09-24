@@ -1,39 +1,46 @@
 'use strict';
 function brandTop() {
   return `<div class="brand">${logo(28)}<span>MARKUS-A</span></div>
-    <button class="tbtn" onclick="go('search')" aria-label="Поиск">${ic('search')}</button>
-    <button class="avatar" onclick="go('settings')" aria-label="Настройки">${esc((S.set.name || 'M').trim()[0].toUpperCase())}</button>`;
+    <button class="tbtn" onclick="go('search')" aria-label="${esc(t('Поиск'))}">${ic('search')}</button>
+    <button class="tbtn" onclick="go('settings')" aria-label="${esc(t('Настройки'))}">${ic('settings')}</button>`;
 }
-function titleTop(t, o = {}) { return `${o.back ? `<button class="tbtn" onclick="${o.back}" aria-label="Назад">${ic('left')}</button>` : ''}<h1>${esc(t)}</h1>${o.extra || ''}`; }
+function titleTop(title, o = {}) { return `<button class="tbtn" onclick="goBack()" aria-label="${esc(t('Назад'))}">${ic('left')}</button><h1>${esc(title)}</h1>${o.extra || ''}`; }
 
 const SCREENS = {};
 
 /* ================= HOME ================= */
+function sortAgenda(entries, mode) {
+  const tm = e => e.subs ? (e.subs[0].time || '99:98') : e.cont ? '99:97' : (e.it.start || '99:99');
+  const doneRank = e => (e.it.status === 'done' || e.it.status === 'cancelled') ? 1 : 0;
+  return entries.slice().sort((a, b) => doneRank(a) - doneRank(b) || (mode === 'prio' ? (prioRank(b.it) - prioRank(a.it)) || (isOverdue(b.it) - isOverdue(a.it)) : 0) || tm(a).localeCompare(tm(b)) || (prioRank(b.it) - prioRank(a.it)));
+}
 SCREENS.home = () => {
-  const t = D.today(), h = new Date().getHours();
-  const greet = h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер';
+  const td = D.today(), h = new Date().getHours();
+  const greet = h < 5 ? t('Доброй ночи') : h < 12 ? t('Доброе утро') : h < 18 ? t('Добрый день') : t('Добрый вечер');
   const name = S.set.name ? ', ' + esc(S.set.name.trim().split(' ')[0]) : '';
   const cur = currentItem(), nx = nextToday();
-  const today = sortItems(itemsOn(t).filter(i => i.status !== 'cancelled'));
-  const od = overdueList(), up = upcoming(14, 5), imp = importantList();
-  let b = `<div class="hello"><h2>${greet}${name}!</h2><p>${esc(D.long(t))}</p></div>`;
-  if ('Notification' in window && Notification.permission === 'default') b += `<div class="banner" onclick="askNotif()">${ic('bell')}<div><b>Включите уведомления</b><span>Чтобы MARKUS-A напоминал о делах</span></div>${ic('right')}</div>`;
-  if (!AI.ready()) b += `<div class="banner" onclick="go('settings')">${ic('ai')}<div><b>Подключите AI (бесплатно)</b><span>Для голосовых команд и анализа встреч</span></div>${ic('right')}</div>`;
-  const nowCard = (label, it) => `<div class="now" data-open="${it.id}"><div class="now-b"><div class="now-l">${label}</div><div class="now-time">${esc(timeLabel(it))}</div><div class="now-t">${esc(it.title)}</div><div class="now-s">${esc(catOf(it).name)}${it.place ? ' · ' + esc(it.place) : ''}</div></div>${ic('right')}</div>`;
-  if (cur) b += nowCard('Сейчас', cur);
-  else if (nx) b += nowCard('Далее сегодня', nx);
-  else b += `<div class="now" onclick="openVoice()"><div class="now-b"><div class="now-l">Сейчас</div><div class="now-t">Свободное время</div><div class="now-s">${today.filter(isOpen).length ? 'Остались задачи без времени' : 'Скажите MARKUS-A, что запланировать'}</div></div>${ic('mic')}</div>`;
-  if (od.length) b += sec('Просрочено', od.length) + listOf(od.slice(0, 5), { showDate: true, resched: true });
-  b += sec('Сегодня', today.length + ' ' + plural(today.length, 'задача', 'задачи', 'задач'), `<button class="link" onclick="S.calView='day';S.selDate=D.today();go('calendar')">Календарь</button>`);
-  b += today.length ? listOf(today) : emptyBox('☀️', 'На сегодня ничего не запланировано');
-  if (up.length) b += sec('Далее') + listOf(up, { showDate: true });
-  if (imp.length) b += sec('Важное') + listOf(imp, { showDate: true });
+  const ag = sortAgenda(dayAgenda(td).filter(e => e.it.status !== 'cancelled'), S.set.homeSort);
+  const od = overdueList().filter(i => i.date !== td), up = upcoming(14, 5), imp = importantList();
+  let b = `<div class="hello"><h2>${greet}${name}!</h2><p>${esc(D.long(td))}</p></div>`;
+  if ('Notification' in window && Notification.permission === 'default') b += `<div class="banner" onclick="askNotif()">${ic('bell')}<div><b>${t('Включите уведомления')}</b><span>${t('Чтобы MARKUS-A напоминал о делах')}</span></div>${ic('right')}</div>`;
+  if (!AI.ready()) b += `<div class="banner" onclick="go('settings')">${ic('ai')}<div><b>${t('Подключите AI (бесплатно)')}</b><span>${t('Для голосовых команд и анализа встреч')}</span></div>${ic('right')}</div>`;
+  const nowCard = (label, it) => `<div class="now" data-open="${it.id}"><div class="now-b"><div class="now-l">${label}</div><div class="now-time">${esc(timeLabel(it))}</div><div class="now-t">${esc(it.title)}</div><div class="now-s">${esc(catName(catOf(it)))}${it.place ? ' · ' + esc(it.place) : ''}</div></div>${ic('right')}</div>`;
+  if (cur) b += nowCard(t('Сейчас'), cur);
+  else if (nx) b += nowCard(t('Далее сегодня'), nx);
+  else b += `<div class="now" onclick="openVoice()"><div class="now-b"><div class="now-l">${t('Сейчас')}</div><div class="now-t">${t('Свободное время')}</div><div class="now-s">${ag.some(e => isOpen(e.it)) ? t('Остались задачи без времени') : t('Скажите MARKUS-A, что запланировать')}</div></div>${ic('mic')}</div>`;
+  if (od.length) b += sec(t('Просрочено'), od.length) + `<div class="list">${od.slice(0, 5).map(i => row(i, { showDate: true, resched: true })).join('')}</div>`;
+  const lim = Math.max(3, +S.set.homeLimit || 6), shown = S.homeAll ? ag : ag.slice(0, lim);
+  const openCnt = ag.filter(e => isOpen(e.it)).length;
+  b += sec(t('Сегодня'), openCnt + ' ' + tn(openCnt, 'задача|задачи|задач'), `<button class="sortbtn" onclick="S.set.homeSort=S.set.homeSort==='time'?'prio':'time';saveSettings();render()">${ic('sort', 14)} ${S.set.homeSort === 'time' ? t('по времени') : t('по важности')}</button>`);
+  b += ag.length ? `<div class="list">${agendaRows(shown)}</div>` + (ag.length > lim ? `<button class="more-btn" onclick="S.homeAll=!S.homeAll;render()">${S.homeAll ? ic('up', 16) + ' ' + t('Свернуть') : ic('down', 16) + ' ' + t('Показать все ({n})', { n: ag.length })}</button>` : '') : emptyBox('☀️', t('На сегодня ничего не запланировано'));
+  if (up.length) b += sec(t('Далее'), '', `<button class="link" onclick="S.calView='list';S.showPast=false;go('calendar')">${t('Все')}</button>`) + listOf(up, { showDate: true });
+  if (imp.length) b += sec(t('Важное')) + listOf(imp, { showDate: true });
   const dock = `<div class="dock">
-    <button class="dk" onclick="openEditor('task')">${ic('check', 22)}<span>Задача</span></button>
-    <button class="dk" onclick="openEditor('meeting')">${ic('users', 22)}<span>Встреча</span></button>
-    <button class="dk-mic" onclick="openVoice()"><i>${ic('mic', 28)}</i>Сказать MARKUS-A</button>
-    <button class="dk" onclick="openNoteEditor()">${ic('note', 22)}<span>Заметка</span></button>
-    <button class="dk" onclick="quickRecord()">${ic('rec', 22)}<span>Запись</span></button></div>`;
+    <button class="dk" onclick="openEditor('task')">${ic('check', 22)}<span>${t('Задача')}</span></button>
+    <button class="dk" onclick="openEditor('meeting')">${ic('users', 22)}<span>${t('Встреча')}</span></button>
+    <button class="dk-mic" onclick="openVoice()"><i>${ic('mic', 28)}</i>${t('Сказать MARKUS-A')}</button>
+    <button class="dk" onclick="openNoteEditor()">${ic('note', 22)}<span>${t('Заметка')}</span></button>
+    <button class="dk" onclick="quickRecord()">${ic('rec', 22)}<span>${t('Запись')}</span></button></div>`;
   return { top: brandTop(), body: b, dock };
 };
 
@@ -47,16 +54,16 @@ function calShift(n) {
 function calTitle() {
   const v = S.calView, s = S.selDate;
   if (v === 'day') return D.long(s);
-  if (v === 'month') { const d = D.parse(s); return D.M[d.getMonth()] + ' ' + d.getFullYear(); }
+  if (v === 'month') return D.monthYear(s);
   const a = v === 'week' ? D.weekStart(s) : s, e = D.add(a, v === 'week' ? 6 : 2);
-  const da = D.parse(a), de = D.parse(e);
-  return da.getMonth() === de.getMonth() ? `${da.getDate()}–${de.getDate()} ${D.MG[de.getMonth()]}` : `${D.short(a)} – ${D.short(e)}`;
+  return D.short(a) + ' – ' + D.short(e);
 }
+function hasOnDay(d) { return dayAgenda(d).some(e => isOpen(e.it)); }
 function weekStrip() {
-  const ws = D.weekStart(S.selDate), t = D.today();
+  const ws = D.weekStart(S.selDate), td = D.today();
   return `<div class="wstrip">${[0, 1, 2, 3, 4, 5, 6].map(k => {
-    const d = D.add(ws, k), has = itemsOn(d).some(isOpen);
-    return `<button class="wd ${d === t ? 'today' : ''} ${d === S.selDate ? 'sel' : ''}" onclick="S.selDate='${d}';render()">${D.DOW[D.parse(d).getDay()]}<b>${D.parse(d).getDate()}</b><i class="${has ? '' : 'no'}"></i></button>`;
+    const d = D.add(ws, k);
+    return `<button class="wd ${d === td ? 'today' : ''} ${d === S.selDate ? 'sel' : ''}" onclick="S.selDate='${d}';render()">${D.dow(D.parse(d).getDay())}<b>${D.parse(d).getDate()}</b><i class="${hasOnDay(d) ? '' : 'no'}"></i></button>`;
   }).join('')}</div>`;
 }
 function layoutDay(items) {
@@ -68,27 +75,28 @@ function layoutDay(items) {
   return out;
 }
 function timeGrid(dates) {
-  const HH = 52, t = D.today();
+  const HH = 52, td = D.today();
   const per = dates.map(d => itemsOn(d).filter(i => i.status !== 'cancelled'));
+  const subsPer = dates.map(d => dayAgenda(d).filter(e => e.subs));
   let h0 = 7, h1 = 22;
   per.flat().forEach(i => { if (i.start) { h0 = Math.min(h0, Math.floor(D.toMin(i.start) / 60)); h1 = Math.max(h1, Math.ceil(D.toMin(i.end || i.start) / 60) + (i.end ? 0 : 1)); } });
   h1 = Math.min(24, h1);
-  const hours = []; for (let h = h0; h < h1; h++) hours.push(h);
+  const hours = []; for (let x = h0; x < h1; x++) hours.push(x);
   const multi = dates.length > 1;
-  const head = multi ? `<div class="tg-head">${dates.map(d => `<button class="${d === t ? 'today' : ''}" onclick="S.selDate='${d}';S.calView='day';render()">${D.DOW[D.parse(d).getDay()]} ${D.parse(d).getDate()}</button>`).join('')}</div>` : '';
-  const allday = per.map(a => a.filter(i => !i.start));
-  const ad = allday.some(a => a.length) ? `<div class="tg-allday">${allday.map(a => `<div>${a.map(i => `<div class="adb" style="--c:${catOf(i).color}" data-open="${i.id}">${i.status === 'done' ? '✓ ' : ''}${esc(i.title)}</div>`).join('')}</div>`).join('')}</div>` : '';
+  const head = multi ? `<div class="tg-head">${dates.map(d => `<button class="${d === td ? 'today' : ''}" onclick="S.selDate='${d}';S.calView='day';render()">${D.dow(D.parse(d).getDay())} ${D.parse(d).getDate()}</button>`).join('')}</div>` : '';
+  const ad = dates.map((d, k) => per[k].filter(i => !i.start).map(i => `<div class="adb" style="--c:${catOf(i).color}" data-open="${i.id}">${i.status === 'done' ? '✓ ' : ''}${esc(i.title)}</div>`).join('') + subsPer[k].map(e => e.subs.map(s => `<div class="adb sub" style="--c:${catOf(e.it).color}" data-open="${e.it.id}">↳ ${esc(s.text)}</div>`).join('')).join(''));
+  const adRow = ad.some(Boolean) ? `<div class="tg-allday">${ad.map(x => `<div>${x}</div>`).join('')}</div>` : '';
   const cols = dates.map((d, k) => {
     const blocks = layoutDay(per[k]).map(x => {
-      const top = (x.s - h0 * 60) / 60 * HH, hgt = Math.max(22, (x.e - x.s) / 60 * HH - 2), w = 100 / x.n;
-      return `<div class="blk ${x.i.status === 'done' ? 'done' : ''}" style="--c:${catOf(x.i).color};top:${top}px;height:${hgt}px;left:calc(${x.lane * w}% + 2px);width:calc(${w}% - 4px)" data-open="${x.i.id}"><b>${x.i.kind === 'meeting' ? '👥 ' : ''}${esc(x.i.title)}</b>${hgt > 34 ? `<span>${esc(timeLabel(x.i))}</span>` : ''}</div>`;
+      const top = (x.s - h0 * 60) / 60 * HH, hgt = Math.max(22, (x.e - x.s) / 60 * HH - 2), w = 100 / x.n, p = progress(x.i);
+      return `<div class="blk ${x.i.status === 'done' ? 'done' : ''}" style="--c:${catOf(x.i).color};top:${top}px;height:${hgt}px;left:calc(${x.lane * w}% + 2px);width:calc(${w}% - 4px)" data-open="${x.i.id}"><b>${x.i.kind === 'meeting' ? '👥 ' : ''}${esc(x.i.title)}</b>${hgt > 34 ? `<span>${esc(timeLabel(x.i))}${p != null && (x.i.subtasks || []).length ? ' · ' + p + '%' : ''}</span>` : ''}</div>`;
     }).join('');
     const nm = D.nowMin();
-    const line = d === t && nm >= h0 * 60 && nm < h1 * 60 ? `<div class="now-line" style="top:${(nm - h0 * 60) / 60 * HH}px"></div>` : '';
+    const line = d === td && nm >= h0 * 60 && nm < h1 * 60 ? `<div class="now-line" style="top:${(nm - h0 * 60) / 60 * HH}px"></div>` : '';
     return `<div class="tg-col" style="height:${hours.length * HH}px" onclick="gridClick(event,'${d}',${h0})">${blocks}${line}</div>`;
   }).join('');
-  return `<div class="tg">${head}${ad}<div class="tg-body"><div class="tg-hours">${hours.map(h => `<div>${pad(h)}:00</div>`).join('')}</div>${cols}</div></div>
-    <div class="hint" style="text-align:center">Нажмите на пустое место в сетке — создам задачу на это время</div>`;
+  return `<div class="tg">${head}${adRow}<div class="tg-body"><div class="tg-hours">${hours.map(x => `<div>${pad(x)}:00</div>`).join('')}</div>${cols}</div></div>
+    <div class="hint" style="text-align:center">${t('Нажмите на пустое место в сетке — создам задачу на это время')}</div>`;
 }
 function gridClick(e, date, h0) {
   if (e.target.closest('.blk')) return;
@@ -98,84 +106,87 @@ function gridClick(e, date, h0) {
   openEditor('task', { date, start, end: D.addMin(start, S.set.defaultDur) });
 }
 function monthGrid() {
-  const sel = D.parse(S.selDate), t = D.today();
+  const sel = D.parse(S.selDate), td = D.today();
   const first = D.fmt(new Date(sel.getFullYear(), sel.getMonth(), 1));
   const start = D.weekStart(first);
   let cells = '';
   for (let k = 0; k < 42; k++) {
-    const d = D.add(start, k), dd = D.parse(d), its = sortItems(itemsOn(d).filter(i => i.status !== 'cancelled'));
+    const d = D.add(start, k), dd = D.parse(d);
     if (k === 35 && dd.getMonth() !== sel.getMonth()) break;
-    cells += `<div class="m-cell ${dd.getMonth() !== sel.getMonth() ? 'out' : ''} ${d === t ? 'today' : ''}" onclick="S.selDate='${d}';S.calView='day';S.scrollCal=true;render()">
-      <div class="m-num">${dd.getDate()}</div>${its.slice(0, 3).map(i => `<div class="m-ev" style="--c:${catOf(i).color}">${esc(i.title)}</div>`).join('')}${its.length > 3 ? `<div class="m-more">+${its.length - 3}</div>` : ''}</div>`;
+    const ag = sortAgenda(dayAgenda(d).filter(e => e.it.status !== 'cancelled' && !e.cont), 'time');
+    cells += `<div class="m-cell ${dd.getMonth() !== sel.getMonth() ? 'out' : ''} ${d === td ? 'today' : ''}" onclick="S.selDate='${d}';S.calView='day';S.scrollCal=true;render()">
+      <div class="m-num">${dd.getDate()}</div>${ag.slice(0, 3).map(e => `<div class="m-ev" style="--c:${catOf(e.it).color}">${e.subs ? '↳ ' + esc(e.subs[0].text) : esc(e.it.title)}</div>`).join('')}${ag.length > 3 ? `<div class="m-more">+${ag.length - 3}</div>` : ''}</div>`;
   }
-  return `<div class="month"><div class="m-dow">${['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map(x => `<span>${x}</span>`).join('')}</div><div class="m-grid">${cells}</div></div>`;
+  return `<div class="month"><div class="m-dow">${[1, 2, 3, 4, 5, 6, 0].map(x => `<span>${D.dow(x)}</span>`).join('')}</div><div class="m-grid">${cells}</div></div>`;
 }
 function listView() {
-  const t = D.today(), past = S.showPast;
-  const its = S.items.filter(i => !i.deleted && i.kind !== 'note' && i.date && (past ? i.date < t : i.date >= t));
-  const sorted = sortByDate(its, past).slice(0, 300);
-  const groups = {};
-  sorted.forEach(i => { (groups[i.date] = groups[i.date] || []).push(i); });
-  let b = `<div class="seg"><button class="${!past ? 'on' : ''}" onclick="S.showPast=false;render()">Будущее</button><button class="${past ? 'on' : ''}" onclick="S.showPast=true;render()">Прошлое</button></div>`;
-  const keys = Object.keys(groups);
-  if (!keys.length) b += emptyBox(past ? '🗂' : '🗓', past ? 'Прошедших дел нет' : 'Будущих дел нет');
-  keys.forEach(d => { b += sec(D.human(d), D.DOWF[D.parse(d).getDay()]) + listOf(sortItems(groups[d])); });
-  if (!past) { const nd = S.items.filter(i => isOpen(i) && !i.date); if (nd.length) b += sec('Без даты', nd.length) + listOf(nd); }
+  const td = D.today(), past = S.showPast;
+  let b = `<div class="seg"><button class="${!past ? 'on' : ''}" onclick="S.showPast=false;render()">${t('Будущее')}</button><button class="${past ? 'on' : ''}" onclick="S.showPast=true;render()">${t('Прошлое')}</button></div>`;
+  let any = false;
+  for (let k = 0; k < 60; k++) {
+    const d = past ? D.add(td, -1 - k) : D.add(td, k);
+    const ag = sortAgenda(dayAgenda(d).filter(e => !e.cont), 'time');
+    if (!ag.length) continue;
+    any = true;
+    b += sec(D.human(d), D.dowFull(D.parse(d).getDay())) + `<div class="list">${agendaRows(ag)}</div>`;
+  }
+  if (!any) b += emptyBox(past ? '🗂' : '🗓', past ? t('Прошедших дел нет') : t('Будущих дел нет'));
+  if (!past) { const nd = S.items.filter(i => isOpen(i) && !i.date); if (nd.length) b += sec(t('Без даты'), nd.length) + listOf(nd); }
   return b;
 }
 SCREENS.calendar = () => {
   if (!S.selDate) S.selDate = D.today();
   const v = S.calView;
   const views = [['day', 'День'], ['3day', '3 дня'], ['week', 'Неделя'], ['month', 'Месяц'], ['list', 'Список']];
-  let b = `<div class="seg">${views.map(([k, l]) => `<button class="${v === k ? 'on' : ''}" onclick="S.calView='${k}';S.scrollCal=true;render()">${l}</button>`).join('')}</div>`;
-  if (v !== 'list') b += `<div class="cal-nav"><button class="tbtn" onclick="calShift(-1)" aria-label="Назад">${ic('left')}</button><b>${esc(calTitle())}</b><button class="tbtn" onclick="calShift(1)" aria-label="Вперёд">${ic('right')}</button></div>`;
+  let b = `<div class="seg">${views.map(([k, l]) => `<button class="${v === k ? 'on' : ''}" onclick="S.calView='${k}';S.scrollCal=true;render()">${t(l)}</button>`).join('')}</div>`;
+  if (v !== 'list') b += `<div class="cal-nav"><button class="tbtn" onclick="calShift(-1)">${ic('left')}</button><b>${esc(calTitle())}</b><button class="tbtn" onclick="calShift(1)">${ic('right')}</button></div>`;
   if (v === 'day') b += weekStrip() + timeGrid([S.selDate]);
   else if (v === '3day') b += timeGrid([S.selDate, D.add(S.selDate, 1), D.add(S.selDate, 2)]);
   else if (v === 'week') { const ws = D.weekStart(S.selDate); b += timeGrid([0, 1, 2, 3, 4, 5, 6].map(k => D.add(ws, k))); }
   else if (v === 'month') b += monthGrid();
   else b += listView();
   return {
-    top: titleTop('Календарь', { extra: `<button class="chip-btn" onclick="S.selDate=D.today();S.scrollCal=true;render()">Сегодня</button><button class="tbtn" onclick="openSlotFinder()" aria-label="Найти свободное окно">${ic('clock')}</button>` }),
+    top: titleTop(t('Календарь'), { extra: `<button class="chip-btn" onclick="S.selDate=D.today();S.scrollCal=true;render()">${t('Сегодня')}</button><button class="tbtn" onclick="openPdfExport('week')" aria-label="PDF">${ic('pdf')}</button><button class="tbtn" onclick="openSlotFinder()" aria-label="${esc(t('Найти свободное окно'))}">${ic('clock')}</button>` }),
     body: b,
-    dock: fab(`openEditor('task',{date:S.selDate})`, `<button class="fab sec2" onclick="openVoice()" aria-label="Голос">${ic('mic', 24)}</button>`),
+    dock: fab(`openEditor('task',{date:S.selDate})`, `<button class="fab sec2" onclick="openVoice()" aria-label="${esc(t('Голос'))}">${ic('mic', 24)}</button>`),
     after: () => {
       if (!S.scrollCal) return; S.scrollCal = false;
       if (!['day', '3day', 'week'].includes(v)) return;
-      const nl = $('.now-line'), fb = $('.blk');
-      const target = nl || fb;
-      if (target) { const y = target.getBoundingClientRect().top + window.scrollY - 180; window.scrollTo({ top: Math.max(0, y) }); }
+      const target = $('.now-line') || $('.blk');
+      if (target) window.scrollTo({ top: Math.max(0, target.getBoundingClientRect().top + window.scrollY - 180) });
     }
   };
 };
 
 /* ================= TASKS ================= */
-const TFILTERS = [['today', 'Сегодня'], ['tomorrow', 'Завтра'], ['week', '7 дней'], ['overdue', 'Просрочено'], ['nodate', 'Без даты'], ['active', 'Все активные'], ['done', 'Выполнено']];
+const TFILTERS = [['today', 'Сегодня'], ['tomorrow', 'Завтра'], ['week', '7 дней'], ['overdue', 'Просрочено'], ['nodate', 'Без даты'], ['active', 'Все активные'], ['done', 'Выполнено'], ['cancelled', 'Отменённые']];
 function taskFilter(k) {
-  const t = D.today(), tm = D.add(t, 1), w = D.add(t, 7);
-  return S.items.filter(i => !i.deleted && i.kind !== 'note').filter(i => {
-    switch (k) {
-      case 'today': return i.date === t && i.status !== 'cancelled';
-      case 'tomorrow': return i.date === tm && i.status !== 'cancelled';
-      case 'week': return isOpen(i) && i.date && i.date >= t && i.date <= w;
-      case 'overdue': return isOverdue(i);
-      case 'nodate': return isOpen(i) && !i.date;
-      case 'active': return isOpen(i);
-      case 'done': return i.status === 'done';
-    }
-    return false;
-  });
+  const td = D.today(), w = D.add(td, 7);
+  const all = S.items.filter(i => !i.deleted && isTaskKind(i));
+  switch (k) {
+    case 'today': return dayAgenda(td).filter(e => e.it.status !== 'cancelled');
+    case 'tomorrow': return dayAgenda(D.add(td, 1)).filter(e => e.it.status !== 'cancelled');
+    case 'week': return all.filter(i => isOpen(i) && i.date && i.date <= w && spanEnd(i) >= td);
+    case 'overdue': return all.filter(isOverdue);
+    case 'nodate': return all.filter(i => isOpen(i) && !i.date);
+    case 'active': return all.filter(isOpen);
+    case 'done': return all.filter(i => i.status === 'done');
+    case 'cancelled': return all.filter(i => i.status === 'cancelled');
+  }
+  return [];
 }
 SCREENS.tasks = () => {
   const k = S.taskFilter;
-  let b = `<div class="chips">${TFILTERS.map(([f, l]) => { const n = taskFilter(f).length; return `<button class="chip ${k === f ? 'on' : ''}" onclick="S.taskFilter='${f}';render()">${l}${n && f !== 'done' ? `<small>${n}</small>` : ''}</button>`; }).join('')}</div>`;
+  let b = `<div class="chips">${TFILTERS.map(([f, l]) => { const n = taskFilter(f).length; return `<button class="chip ${k === f ? 'on' : ''}" onclick="S.taskFilter='${f}';render()">${t(l)}${n && !['done', 'cancelled'].includes(f) ? `<small>${n}</small>` : ''}</button>`; }).join('')}</div>`;
   const items = taskFilter(k);
-  if (!items.length) b += emptyBox(k === 'overdue' ? '🎉' : '✅', k === 'overdue' ? 'Просроченных задач нет' : 'Здесь пусто');
-  else if (['today', 'tomorrow', 'nodate'].includes(k)) b += listOf(sortItems(items), { resched: k === 'today' && false });
+  if (!items.length) b += emptyBox(k === 'overdue' ? '🎉' : '✅', k === 'overdue' ? t('Просроченных задач нет') : t('Здесь пусто'));
+  else if (k === 'today' || k === 'tomorrow') b += `<div class="list">${agendaRows(sortAgenda(items, S.set.homeSort))}</div>`;
+  else if (k === 'nodate') b += listOf(sortItems(items));
   else {
-    const groups = {}; sortByDate(items, k === 'done').slice(0, 300).forEach(i => { const g = i.date || 'none'; (groups[g] = groups[g] || []).push(i); });
-    Object.keys(groups).forEach(g => { b += sec(g === 'none' ? 'Без даты' : D.human(g), g === 'none' ? '' : D.DOWF[D.parse(g).getDay()]) + listOf(groups[g], { resched: k === 'overdue' }); });
+    const groups = {}; sortByDate(items, k === 'done' || k === 'cancelled').slice(0, 300).forEach(i => { const g = i.date || 'none'; (groups[g] = groups[g] || []).push(i); });
+    Object.keys(groups).forEach(g => { b += sec(g === 'none' ? t('Без даты') : D.human(g), g === 'none' ? '' : D.dowFull(D.parse(g).getDay())) + listOf(groups[g], { resched: k === 'overdue' }); });
   }
-  return { top: titleTop('Задачи', { extra: `<button class="tbtn" onclick="openSlotFinder()" aria-label="Найти окно">${ic('clock')}</button>` }), body: b, dock: fab(`openEditor('task')`, `<button class="fab sec2" onclick="openVoice()" aria-label="Голос">${ic('mic', 24)}</button>`) };
+  return { top: titleTop(t('Задачи'), { extra: `<button class="tbtn" onclick="openPdfExport('${k === 'tomorrow' ? 'tomorrow' : k === 'week' ? 'week' : 'today'}')" aria-label="PDF">${ic('pdf')}</button><button class="tbtn" onclick="openSlotFinder()" aria-label="${esc(t('Найти окно'))}">${ic('clock')}</button>` }), body: b, dock: fab(`openEditor('task')`, `<button class="fab sec2" onclick="openVoice()" aria-label="${esc(t('Голос'))}">${ic('mic', 24)}</button>`) };
 };
 
 /* ================= NOTES ================= */
@@ -187,96 +198,141 @@ function notesFiltered() {
 }
 function notesListHTML() {
   const ns = notesFiltered();
-  if (!ns.length) return emptyBox('📝', S.noteQ ? 'Ничего не найдено' : 'Заметок пока нет. Нажмите + или микрофон');
-  return `<div class="list">${ns.map(n => { const c = NOTE_COLORS[n.noteCat] || '#64748b'; return `<div class="ncard" data-open="${n.id}"><div class="nicon" style="--t:${c}">${ic(n.noteCat === 'Документы' ? 'file' : 'note')}</div><div class="nmain"><b>${esc(n.title || 'Без названия')}</b><span>${esc(D.human((n.updated || '').slice(0, 10) || D.today()))} · ${esc(n.noteCat || '')}${(n.files || []).length ? ' · 📎 ' + n.files.length : ''}</span>${n.desc ? `<p>${esc(n.desc.slice(0, 200))}</p>` : ''}</div>${n.fav ? `<span style="color:var(--ylw)">${ic('starf', 16)}</span>` : ''}</div>`; }).join('')}</div>`;
+  if (!ns.length) return emptyBox('📝', S.noteQ ? t('Ничего не найдено') : t('Заметок пока нет. Нажмите + или микрофон'));
+  return `<div class="list">${ns.map(n => { const c = NOTE_COLORS[n.noteCat] || '#64748b'; return `<div class="ncard" data-open="${n.id}"><div class="nicon" style="--t:${c}">${ic(n.noteCat === 'Документы' ? 'file' : 'note')}</div><div class="nmain"><b>${esc(n.title || t('Без названия'))}</b><span>${esc(D.human((n.updated || '').slice(0, 10) || D.today()))} · ${esc(noteCatName(n.noteCat || ''))}${(n.files || []).length ? ' · 📎 ' + n.files.length : ''}</span>${n.desc ? `<p>${esc(n.desc.slice(0, 200))}</p>` : ''}</div>${n.fav ? `<span style="color:var(--ylw)">${ic('starf', 16)}</span>` : ''}</div>`; }).join('')}</div>`;
 }
 SCREENS.notes = () => {
-  let b = `<div class="search">${ic('search', 18)}<input placeholder="Поиск заметок…" value="${esc(S.noteQ)}" oninput="S.noteQ=this.value;$('#nl').innerHTML=notesListHTML()"></div>`;
-  b += `<div class="chips"><button class="chip ${S.noteCat === 'all' ? 'on' : ''}" onclick="S.noteCat='all';render()">Все</button>${S.set.noteCats.map(c => `<button class="chip ${S.noteCat === c ? 'on' : ''}" onclick="S.noteCat='${esc(c)}';render()">${esc(c)}</button>`).join('')}</div>`;
+  let b = `<div class="search">${ic('search', 18)}<input placeholder="${esc(t('Поиск заметок…'))}" value="${esc(S.noteQ)}" oninput="S.noteQ=this.value;$('#nl').innerHTML=notesListHTML()"></div>`;
+  b += `<div class="chips"><button class="chip ${S.noteCat === 'all' ? 'on' : ''}" onclick="S.noteCat='all';render()">${t('Все')}</button>${S.set.noteCats.map(c => `<button class="chip ${S.noteCat === c ? 'on' : ''}" onclick="S.noteCat='${esc(c)}';render()">${esc(noteCatName(c))}</button>`).join('')}</div>`;
   b += `<div id="nl">${notesListHTML()}</div>`;
-  return { top: titleTop('Заметки'), body: b, dock: fab(`openNoteEditor(null,{noteCat:S.noteCat==='all'?'Идеи':S.noteCat})`, `<button class="fab sec2" onclick="openVoice('note')" aria-label="Надиктовать заметку">${ic('mic', 24)}</button>`) };
+  return { top: titleTop(t('Заметки')), body: b, dock: fab(`openNoteEditor(null,{noteCat:S.noteCat==='all'?'Идеи':S.noteCat})`, `<button class="fab sec2" onclick="openVoice('note')" aria-label="${esc(t('Надиктовать заметку'))}">${ic('mic', 24)}</button>`) };
 };
 
 /* ================= MORE ================= */
 SCREENS.more = () => {
-  const tiles = [['meetings', 'Встречи', 'users'], ['docs', 'Документы', 'folder'], ['fav', 'Избранное', 'star'], ['search', 'Поиск и AI', 'search'], ['slot', 'Свободное окно', 'clock'], ['rec', 'Запись', 'rec'], ['voice', 'Голос', 'mic'], ['settings', 'Настройки', 'settings']];
-  const act = { slot: 'openSlotFinder()', rec: 'quickRecord()', voice: 'openVoice()' };
-  const b = `<div class="tiles">${tiles.map(([k, l, i]) => `<button class="tile" onclick="${act[k] || `go('${k}')`}"><span class="ti">${ic(i, 22)}</span>${l}</button>`).join('')}</div>
-    <div style="text-align:center;margin-top:30px">${logo(56)}<div style="font-weight:800;font-size:20px;margin-top:10px">MARKUS-A</div><div class="muted" style="font-size:13px">Больше, чем просто календарь.<br>Думай. Говори. Действуй.</div></div>`;
-  return { top: titleTop('Ещё'), body: b };
+  const tiles = [['meetings', 'Встречи', 'users'], ['recordings', 'Записи', 'rec'], ['contacts', 'Контакты', 'user'], ['docs', 'Документы', 'folder'], ['fav', 'Избранное', 'star'], ['search', 'Поиск и AI', 'search'], ['card', 'Моя визитка', 'qr'], ['pdf', 'PDF-выгрузка', 'pdf'], ['slot', 'Свободное окно', 'clock'], ['voice', 'Голос', 'mic'], ['settings', 'Настройки', 'settings']];
+  const act = { slot: 'openSlotFinder()', voice: 'openVoice()', pdf: "openPdfExport('today')" };
+  const b = `<div class="tiles">${tiles.map(([k, l, i]) => `<button class="tile" onclick="${act[k] || `go('${k}')`}"><span class="ti">${ic(i, 22)}</span>${t(l)}</button>`).join('')}</div>
+    <div style="text-align:center;margin-top:30px">${logo(56)}<div style="font-weight:800;font-size:20px;margin-top:10px">MARKUS-A</div><div class="muted" style="font-size:13px">${t('Больше, чем просто календарь.')}<br>${t('Думай. Говори. Действуй.')}</div></div>`;
+  return { top: titleTop(t('Ещё')), body: b };
 };
 
 /* ================= MEETINGS ================= */
 SCREENS.meetings = () => {
-  const t = D.today(), up = S.meetList === 'up';
-  const ms = S.items.filter(i => !i.deleted && i.kind === 'meeting' && (up ? (!i.date || i.date >= t) : (i.date && i.date < t)));
-  let b = `<div class="seg"><button class="${up ? 'on' : ''}" onclick="S.meetList='up';render()">Предстоящие</button><button class="${!up ? 'on' : ''}" onclick="S.meetList='past';render()">Прошедшие</button></div>`;
-  b += ms.length ? listOf(sortByDate(ms, !up), { showDate: true }) : emptyBox('👥', up ? 'Предстоящих встреч нет' : 'Прошедших встреч нет');
-  return { top: titleTop('Встречи', { back: "go('more')" }), body: b, dock: fab(`openEditor('meeting')`) };
+  const td = D.today(), up = S.meetList === 'up';
+  const ms = S.items.filter(i => !i.deleted && i.kind === 'meeting' && (up ? (!i.date || i.date >= td) : (i.date && i.date < td)));
+  let b = `<div class="seg"><button class="${up ? 'on' : ''}" onclick="S.meetList='up';render()">${t('Предстоящие')}</button><button class="${!up ? 'on' : ''}" onclick="S.meetList='past';render()">${t('Прошедшие')}</button></div>`;
+  b += ms.length ? listOf(sortByDate(ms, !up), { showDate: true }) : emptyBox('👥', up ? t('Предстоящих встреч нет') : t('Прошедших встреч нет'));
+  return { top: titleTop(t('Встречи')), body: b, dock: fab(`openEditor('meeting')`) };
 };
-
 SCREENS.meeting = () => {
   const m = getItem(S.meetingId);
-  if (!m || m.deleted) return { top: titleTop('Встреча', { back: "go('meetings')" }), body: emptyBox('🤷', 'Встреча не найдена') };
+  if (!m || m.deleted) return { top: titleTop(t('Встреча')), body: emptyBox('🤷', t('Встреча не найдена')) };
   const c = catOf(m), recOn = Rec.active && Rec.active.meetingId === m.id;
+  const cs = (m.contactIds || []).map(getItem).filter(x => x && !x.deleted);
+  const extra = (m.participants || []).filter(n => !cs.some(x => x.title === n));
   let b = `<div style="font-size:22px;font-weight:800;line-height:1.25;margin:4px 0 8px">${esc(m.title)}</div>
-    <div class="kv">${ic('calendar', 16)}${esc(m.date ? D.long(m.date) : 'Без даты')}${m.start ? ' · ' + esc(timeLabel(m)) : ''}</div>
+    <div class="kv">${ic('calendar', 16)}${esc(m.date ? D.long(m.date) : t('Без даты'))}${m.start ? ' · ' + esc(timeLabel(m)) : ''}</div>
     ${m.place ? `<div class="kv">${ic('pin', 16)}${esc(m.place)}</div>` : ''}
-    <div class="pills"><span class="cat" style="--t:${c.color}">${esc(c.name)}</span>${m.priority !== 'normal' ? `<span class="tag" style="--t:${PRIO[m.priority].c}">${PRIO[m.priority].l}</span>` : ''}${m.autoRecord ? `<span class="tag red">● Автозапись</span>` : ''}${m.status === 'done' ? '<span class="tag grn">Завершена</span>' : ''}</div>`;
-  b += `<div class="card"><div class="h4" style="margin-top:0">Участники (${(m.participants || []).length + 1})</div>
-    ${(m.participants || []).map(p => `<div class="person"><span class="pav">${esc(p.trim()[0] || '?').toUpperCase()}</span><div><b style="font-size:14px">${esc(p)}</b></div></div>`).join('')}
-    <div class="person"><span class="pav" style="background:#94a3b8">${esc((S.set.name || 'Я')[0].toUpperCase())}</span><div><b style="font-size:14px">Вы</b><div class="muted" style="font-size:12px">Организатор</div></div></div></div>`;
-  b += `<div class="card"><div class="h4" style="margin-top:0">Документы (${(m.files || []).length})</div>${(m.files || []).length ? attList(m.files, m.id, false) : '<div class="hint">Прикрепите договор, презентацию, реквизиты — всё будет под рукой на встрече</div>'}
-    <label class="att-add" style="margin-top:8px">${ic('clip', 16)} Добавить файлы<input type="file" multiple hidden onchange="meetAddFiles('${m.id}',this)"></label></div>`;
-  if (m.desc) b += `<div class="card"><div class="h4" style="margin-top:0">Заметки</div><div class="pre">${esc(m.desc)}</div></div>`;
-  if (recOn) b += `<button class="btn pri full" onclick="showRec()">${ic('rec', 18)} Идёт запись — открыть</button>`;
-  else if (!m.recording) b += `<button class="btn pri full" onclick="Rec.start('${m.id}')">${ic('mic', 18)} Начать запись встречи</button>`;
+    <div class="pills"><span class="cat" style="--t:${c.color}">${esc(catName(c))}</span>${m.priority !== 'normal' ? `<span class="tag" style="--t:${PRIO[m.priority].c}">${t(PRIO[m.priority].l)}</span>` : ''}${m.autoRecord ? `<span class="tag red">● ${t('Автозапись')}</span>` : ''}${m.status === 'done' ? `<span class="tag grn">${t('Завершена')}</span>` : ''}</div>`;
+  if (m.location) b += `<div class="card"><div class="h4" style="margin-top:0">${t('Локация')}</div><div class="kv" style="word-break:break-all">${ic('pin', 16)}<a href="${esc(m.location)}" target="_blank" rel="noopener">${esc(m.location.length > 60 ? m.location.slice(0, 60) + '…' : m.location)}</a></div>
+    <div class="btns"><a class="btn ghost" href="${esc(m.location)}" target="_blank" rel="noopener">${ic('pin', 16)} ${t('Открыть карту')}</a><button class="btn ghost" onclick="sendInvite('${m.id}')">${ic('send', 16)} ${t('Отправить партнёру')}</button></div></div>`;
+  b += `<div class="card"><div class="h4" style="margin-top:0;display:flex">${t('Участники')} (${cs.length + extra.length + 1})<span style="flex:1"></span><button class="link" onclick="meetAddPerson('${m.id}')">+ ${t('Добавить')}</button></div>
+    ${cs.map(x => `<div class="person" onclick="openContact('${x.id}')" style="cursor:pointer"><span class="pav">${esc(x.title[0].toUpperCase())}</span><div style="flex:1;min-width:0"><b style="font-size:14px">${esc(x.title)}</b><div class="muted" style="font-size:12px">${esc([x.company, x.phone].filter(Boolean).join(' · '))}</div></div>${contactLinks(x).filter(l => l.i !== 'mail').map(l => `<a class="xbtn" href="${esc(l.u)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" aria-label="${esc(l.l)}">${ic(l.i, 16)}</a>`).join('')}</div>`).join('')}
+    ${extra.map(n => `<div class="person"><span class="pav" style="background:#94a3b8">${esc(n.trim()[0] || '?').toUpperCase()}</span><div><b style="font-size:14px">${esc(n)}</b><div class="muted" style="font-size:12px">${t('нет в контактах')}</div></div></div>`).join('')}
+    <div class="person"><span class="pav" style="background:#94a3b8">${esc((S.set.name || 'Я')[0].toUpperCase())}</span><div><b style="font-size:14px">${t('Вы')}</b><div class="muted" style="font-size:12px">${t('Организатор')}</div></div></div>
+    <div class="btns" style="margin-top:8px"><button class="btn ghost" onclick="sendInvite('${m.id}')">${ic('send', 16)} ${t('Пригласить')}</button><button class="btn ghost" onclick="shareCardImage()">${ic('qr', 16)} ${t('Моя визитка')}</button></div></div>`;
+  b += `<div class="card"><div class="h4" style="margin-top:0">${t('Документы')} (${(m.files || []).length})</div>${(m.files || []).length ? attList(m.files, m.id, false) : `<div class="hint">${t('Прикрепите договор, презентацию, реквизиты — всё будет под рукой на встрече')}</div>`}
+    <label class="att-add" style="margin-top:8px">${ic('clip', 16)} ${t('Добавить файлы')}<input type="file" multiple hidden onchange="meetAddFiles('${m.id}',this)"></label></div>`;
+  if (m.desc) b += `<div class="card"><div class="h4" style="margin-top:0">${t('Заметки')}</div><div class="pre">${linkify(m.desc)}</div></div>`;
+  if ((m.subtasks || []).length) b += `<div class="card"><div class="h4" style="margin-top:0">${t('Подзадачи')} · ${progress(m)}%</div>${m.subtasks.map(s => `<div class="sub ${s.done ? 'done' : ''}"><button class="chk sq ${s.done ? 'on' : ''}" onclick="subToggle('${m.id}','${s.id}')">${s.done ? ic('checkmark', 12) : ''}</button><span class="sub-b"><span class="sub-t">${esc(s.text)}</span><span class="sub-m">${subMeta(m, s)}</span></span></div>`).join('')}</div>`;
+  if (recOn) b += `<button class="btn pri full" onclick="showRec()">${ic('rec', 18)} ${t('Идёт запись — открыть')}</button>`;
+  else if (!m.recording) b += `<button class="btn pri full" onclick="Rec.start('${m.id}')">${ic('mic', 18)} ${t('Начать запись встречи')}</button>`;
   if (m.recording) {
-    b += `<div class="card" style="margin-top:10px"><div class="h4" style="margin-top:0">Запись · ${fmtDur(m.recording.duration || 0)} · ${mb(m.recording.size)}</div><div id="m_audio"><div class="hint">Загрузка…</div></div>
-      <div class="btns" style="margin-top:8px"><button class="btn ghost" onclick="openFile('${m.id}','rec')">${ic('download', 16)} Файл</button><button class="btn ${m.transcript ? 'ghost' : 'pri'}" onclick="processMeeting('${m.id}')">${ic('ai', 16)} ${m.transcript ? 'Обработать заново' : 'Обработать AI'}</button></div>
-      <button class="link" style="margin-top:10px" onclick="meetDelRec('${m.id}')">Удалить запись</button></div>`;
+    b += `<div class="card" style="margin-top:10px"><div class="h4" style="margin-top:0">${t('Запись')} · ${fmtDur(m.recording.duration || 0)} · ${mb(m.recording.size)}</div><div id="m_audio"><div class="hint">${t('Загрузка…')}</div></div>
+      <div class="btns" style="margin-top:8px"><button class="btn ghost" onclick="shareRec('${m.id}')">${ic('share', 16)} ${t('Поделиться')}</button><button class="btn ghost" onclick="saveRec('${m.id}')">${ic('download', 16)} ${t('В телефон')}</button></div>
+      <button class="btn ${m.transcript ? 'ghost' : 'pri'} full" style="margin-top:8px" onclick="processMeeting('${m.id}')">${ic('ai', 16)} ${m.transcript ? t('Обработать заново') : t('Обработать AI')}</button>
+      <button class="link" style="margin-top:10px" onclick="meetDelRec('${m.id}')">${t('Удалить запись')}</button></div>`;
   }
   if (m.summary || m.transcript) {
-    const tabs = [['short', 'Кратко'], ['dec', 'Решения'], ['tasks', 'Задачи' + ((m.proposed || []).length ? ' (' + m.proposed.length + ')' : '')], ['tr', 'Стенограмма']];
-    b += sec('AI-итоги встречи') + `<div class="seg">${tabs.map(([k, l]) => `<button class="${S.meetTab === k ? 'on' : ''}" onclick="S.meetTab='${k}';render()">${l}</button>`).join('')}</div><div class="card">${meetTab(m)}</div>`;
-    if (m.summary) b += `<button class="btn ghost full" onclick="meetToTelegram('${m.id}')">${ic('send', 16)} Отправить итоги в Telegram</button>`;
+    const tabs = [['short', 'Кратко'], ['dec', 'Решения'], ['tasks', 'Задачи'], ['tr', 'Стенограмма']];
+    b += sec(t('AI-итоги встречи')) + `<div class="seg">${tabs.map(([k, l]) => `<button class="${S.meetTab === k ? 'on' : ''}" onclick="S.meetTab='${k}';render()">${t(l)}${k === 'tasks' && (m.proposed || []).length ? ' (' + m.proposed.length + ')' : ''}</button>`).join('')}</div><div class="card">${meetTab(m)}</div>`;
+    if (m.summary) b += `<button class="btn ghost full" onclick="meetToTelegram('${m.id}')">${ic('send', 16)} ${t('Отправить итоги в Telegram')}</button>`;
   }
   const menu = `<button class="tbtn" onclick="meetFav('${m.id}')">${ic(m.fav ? 'starf' : 'star')}</button><button class="tbtn" onclick="openShare('${m.id}')">${ic('share')}</button><button class="tbtn" onclick="openEditor('meeting',{id:'${m.id}'})">${ic('edit')}</button>`;
   return {
-    top: titleTop('Встреча', { back: "go(S.prevRoute&&S.prevRoute!=='meeting'?S.prevRoute:'meetings')", extra: menu }), body: b,
+    top: titleTop(t('Встреча'), { extra: menu }), body: b,
     after: async () => {
       const box = $('#m_audio'); if (!box || !m.recording) return;
       const blob = await getFileBlob({ id: m.recording.fileId, cloud: m.recording.cloud });
-      box.innerHTML = blob ? `<audio controls style="width:100%" src="${URL.createObjectURL(blob)}"></audio>` : '<div class="hint warn">Аудио есть только на другом устройстве</div>';
+      box.innerHTML = blob ? `<audio controls style="width:100%" src="${URL.createObjectURL(blob)}"></audio>` : `<div class="hint warn">${t('Аудио есть только на другом устройстве')}</div>`;
     }
   };
 };
 function bl(arr) { return (arr && arr.length) ? `<ul class="bul">${arr.map(x => `<li>${esc(typeof x === 'string' ? x : JSON.stringify(x))}</li>`).join('')}</ul>` : '<div class="hint">—</div>'; }
 function meetTab(m) {
   const s = m.summary || {};
-  if (S.meetTab === 'short') return `<div class="h4" style="margin-top:0">Кратко</div>${bl(s.short)}<div class="h4">Важная информация</div>${bl(s.important)}`;
-  if (S.meetTab === 'dec') return `<div class="h4" style="margin-top:0">Решения</div>${bl(s.decisions)}<div class="h4">Обязательства</div>${bl((s.commitments || []).map(c => `${c.who ? c.who + ': ' : ''}${c.what}${c.due ? ' (срок: ' + c.due + ')' : ''}`))}<div class="h4">Сроки</div>${bl(s.deadlines)}<div class="h4">Риски и нерешённое</div>${bl(s.risks)}<div class="h4">Следующие шаги</div>${bl(s.next)}`;
+  if (S.meetTab === 'short') return `<div class="h4" style="margin-top:0">${t('Кратко')}</div>${bl(s.short)}<div class="h4">${t('Важная информация')}</div>${bl(s.important)}`;
+  if (S.meetTab === 'dec') return `<div class="h4" style="margin-top:0">${t('Решения')}</div>${bl(s.decisions)}<div class="h4">${t('Обязательства')}</div>${bl((s.commitments || []).map(c => `${c.who ? c.who + ': ' : ''}${c.what}${c.due ? ' (' + t('срок') + ': ' + c.due + ')' : ''}`))}<div class="h4">${t('Сроки')}</div>${bl(s.deadlines)}<div class="h4">${t('Риски и нерешённое')}</div>${bl(s.risks)}<div class="h4">${t('Следующие шаги')}</div>${bl(s.next)}`;
   if (S.meetTab === 'tasks') {
     const p = m.proposed || [];
-    if (!p.length) return '<div class="hint">AI не нашёл поручений в этой встрече</div>';
-    return p.map((t, i) => `<div class="sub" style="align-items:flex-start"><span style="flex:1"><b style="font-size:14px">${esc(t.title)}</b><br><span class="muted" style="font-size:12px">${esc(t.date ? D.human(t.date) : 'без даты')}${t.start ? ', ' + t.start : ''}${t.dueTime ? ', до ' + t.dueTime : ''}${t.who ? ' · ' + esc(t.who) : ''}</span></span>
-      ${t.state === 'created' ? '<span class="tag grn">создана</span>' : t.state === 'skipped' ? '<span class="tag">пропущена</span>' : `<button class="rs-btn" onclick="createProposed('${m.id}',${i})">Создать</button>`}</div>`).join('')
-      + (p.some(t => t.state === 'new') ? `<button class="btn pri full" style="margin-top:10px" onclick="reviewProposed('${m.id}',true)">Создать все</button>` : '');
+    if (!p.length) return `<div class="hint">${t('AI не нашёл поручений в этой встрече')}</div>`;
+    return p.map((x, i) => `<div class="sub" style="align-items:flex-start"><span style="flex:1"><b style="font-size:14px">${esc(x.title)}</b><br><span class="muted" style="font-size:12px">${esc(x.date ? D.human(x.date) : t('без даты'))}${x.start ? ', ' + x.start : ''}${x.dueTime ? ', ' + t('до') + ' ' + x.dueTime : ''}${x.who ? ' · ' + esc(x.who) : ''}</span></span>
+      ${x.state === 'created' ? `<span class="tag grn">${t('создана')}</span>` : x.state === 'skipped' ? `<span class="tag">${t('пропущена')}</span>` : `<button class="rs-btn" onclick="createProposed('${m.id}',${i})">${t('Создать')}</button>`}</div>`).join('')
+      + (p.some(x => x.state === 'new') ? `<button class="btn pri full" style="margin-top:10px" onclick="reviewProposed('${m.id}',true)">${t('Создать все')}</button>` : '');
   }
-  return m.transcript ? `<div class="pre">${esc(m.transcript)}</div>` : '<div class="hint">Стенограммы пока нет</div>';
+  return m.transcript ? `<div class="pre">${esc(m.transcript)}</div>` : `<div class="hint">${t('Стенограммы пока нет')}</div>`;
 }
-async function meetAddFiles(id, inp) { const m = getItem(id); for (const f of inp.files) m.files.push(await storeFile(f)); inp.value = ''; await saveItem(m); toast('Файлы добавлены'); }
-async function meetFav(id) { const m = getItem(id); m.fav = !m.fav; await saveItem(m); toast(m.fav ? 'В избранном ★' : 'Убрано из избранного'); }
+async function meetAddPerson(id) { const m = getItem(id); const cid = await pickContact(m.contactIds || []); if (!cid) return; const c = getItem(cid); m.contactIds = Array.from(new Set((m.contactIds || []).concat(cid))); m.participants = Array.from(new Set((m.participants || []).concat(c.title))); await saveItem(m); }
+async function meetAddFiles(id, inp) { const m = getItem(id); for (const f of inp.files) m.files.push(await storeFile(f)); inp.value = ''; await saveItem(m); toast(t('Файлы добавлены')); }
+async function meetFav(id) { const m = getItem(id); m.fav = !m.fav; await saveItem(m); toast(m.fav ? t('В избранном ★') : t('Убрано из избранного')); }
 async function meetDelRec(id) {
-  const m = getItem(id); if (!(await confirmDel('Удалить запись встречи?'))) return;
-  await DB.del('files', m.recording.fileId); m.recording = null; await saveItem(m); toast('Запись удалена');
+  const m = getItem(id); if (!(await confirmDel(t('Удалить запись встречи?')))) return;
+  await DB.del('files', m.recording.fileId); m.recording = null; await saveItem(m); toast(t('Запись удалена'));
 }
 async function meetToTelegram(id) {
   const m = getItem(id), s = m.summary || {};
-  const L = (t, a) => a && a.length ? `\n<b>${t}</b>\n` + a.map(x => '• ' + (typeof x === 'string' ? x : `${x.who ? x.who + ': ' : ''}${x.what}${x.due ? ' (' + x.due + ')' : ''}`)).join('\n') : '';
-  const tx = `📋 <b>Итоги встречи: ${m.title}</b>\n${m.date ? D.human(m.date) : ''} ${timeLabel(m)}` + L('Кратко', s.short) + L('Решения', s.decisions) + L('Обязательства', s.commitments) + L('Следующие шаги', s.next);
-  try { await Cloud.sendTelegram(tx.replace(/&(?!lt;|gt;|amp;)/g, '&amp;')); toast('Отправлено в Telegram ✓'); } catch (e) { toast(e.message, 4000); }
+  const L = (ttl, a) => a && a.length ? `\n<b>${ttl}</b>\n` + a.map(x => '• ' + (typeof x === 'string' ? x : `${x.who ? x.who + ': ' : ''}${x.what}${x.due ? ' (' + x.due + ')' : ''}`)).join('\n') : '';
+  const tx = `📋 <b>${t('Итоги встречи')}: ${m.title}</b>\n${m.date ? D.human(m.date) : ''} ${timeLabel(m)}` + L(t('Кратко'), s.short) + L(t('Решения'), s.decisions) + L(t('Обязательства'), s.commitments) + L(t('Следующие шаги'), s.next);
+  try { await Cloud.sendTelegram(tx.replace(/&(?!lt;|gt;|amp;)/g, '&amp;')); toast(t('Отправлено в Telegram ✓')); } catch (e) { toast(e.message, 4000); }
 }
+
+/* ================= RECORDINGS ================= */
+async function recBlob(id) { const m = getItem(id); const b = m && m.recording && await getFileBlob({ id: m.recording.fileId, cloud: m.recording.cloud }); if (!b) toast(t('Аудио есть только на другом устройстве')); return b; }
+async function shareRec(id) { const m = getItem(id), b = await recBlob(id); if (!b) return; const f = findFile(id, 'rec').f; shareFile(new Blob([b], { type: f.type }), f.name, m.title); }
+async function saveRec(id) { const b = await recBlob(id); if (!b) return; downloadBlob(b, findFile(id, 'rec').f.name); toast(t('Сохранено в «Загрузки» телефона')); }
+SCREENS.recordings = () => {
+  const rs = sortByDate(live().filter(i => i.kind === 'meeting' && i.recording), true);
+  let b = `<div class="hint">${t('Записи хранятся внутри приложения (и в облаке, если вы вошли). Отсюда их можно прослушать, отправить в Telegram/WhatsApp или сохранить в телефон (папка «Загрузки»).')}</div>`;
+  b += rs.length ? rs.map(m => `<div class="card"><div style="display:flex;align-items:center;gap:10px"><span class="ficon" style="background:#f59e0b">${ic('rec', 16)}</span><div style="flex:1;min-width:0"><b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.title)}</b><span class="muted" style="font-size:12px">${esc(m.date ? D.human(m.date) : '')} · ${fmtDur(m.recording.duration || 0)} · ${mb(m.recording.size)}${m.transcript ? ' · ' + t('есть стенограмма') : ''}</span></div>${m.recording.fav ? `<span style="color:var(--ylw)">${ic('starf', 16)}</span>` : ''}</div>
+    <div data-audio="${m.id}" style="margin-top:8px"><button class="link" onclick="loadAudio('${m.id}')">${ic('play', 14)} ${t('Прослушать')}</button></div>
+    <div class="btns" style="margin-top:8px"><button class="btn ghost" onclick="shareRec('${m.id}')">${ic('share', 16)} ${t('Поделиться')}</button><button class="btn ghost" onclick="saveRec('${m.id}')">${ic('download', 16)} ${t('В телефон')}</button><button class="btn ghost" onclick="go('meeting','${m.id}')">${ic('ai', 16)} ${t('Итоги')}</button></div></div>`).join('') : emptyBox('🎙', t('Записей пока нет. Нажмите «Запись» на главном экране или «Начать запись» во встрече.'));
+  return { top: titleTop(t('Записи')), body: b, dock: fab('quickRecord()') };
+};
+async function loadAudio(id) { const b = await recBlob(id); const box = $(`[data-audio="${id}"]`); if (b && box) box.innerHTML = `<audio controls autoplay style="width:100%" src="${URL.createObjectURL(b)}"></audio>`; }
+
+/* ================= CONTACTS ================= */
+function contactsListHTML() {
+  const q = (S.contactQ || '').toLowerCase();
+  const cs = live().filter(c => c.kind === 'contact' && (!q || (c.title + ' ' + (c.company || '') + ' ' + (c.phone || '') + ' ' + (c.telegram || '')).toLowerCase().includes(q))).sort((a, b) => a.title.localeCompare(b.title));
+  if (!cs.length) return emptyBox('👤', q ? t('Ничего не найдено') : t('Контактов пока нет. Добавьте партнёров — их можно выбирать во встречах.'));
+  return `<div class="list">${cs.map(c => `<div class="ncard" data-open="${c.id}"><span class="pav">${esc(c.title[0].toUpperCase())}</span><div class="nmain"><b>${esc(c.title)}</b><span>${esc([c.company, c.phone, c.telegram].filter(Boolean).join(' · '))}</span></div>${(c.files || []).length ? `<span class="mini">${ic('clip', 12)}${c.files.length}</span>` : ''}</div>`).join('')}</div>`;
+}
+SCREENS.contacts = () => {
+  const b = `<div class="search">${ic('search', 18)}<input placeholder="${esc(t('Поиск контактов…'))}" value="${esc(S.contactQ)}" oninput="S.contactQ=this.value;$('#cl').innerHTML=contactsListHTML()"></div><div id="cl">${contactsListHTML()}</div>`;
+  return { top: titleTop(t('Контакты')), body: b, dock: fab('editContact()') };
+};
+
+/* ================= MY CARD ================= */
+SCREENS.card = () => {
+  const c = S.set.myCard;
+  const F = [['brand', 'Бренд (крупно)'], ['subtitle', 'Подзаголовок'], ['fn', 'Имя / название'], ['org', 'Организация'], ['title', 'Деятельность'], ['phone', 'Телефон'], ['phone2', 'Телефон 2'], ['whatsapp', 'WhatsApp'], ['telegram', 'Telegram'], ['email', 'Email'], ['url', 'Сайт'], ['address', 'Адрес'], ['note', 'Примечание'], ['footer', 'Строка внизу']];
+  const b = `<div class="card" style="text-align:center"><canvas id="cardCv" style="width:100%;max-width:360px;border-radius:12px;box-shadow:var(--sh)"></canvas>
+    <div class="btns" style="margin-top:10px"><button class="btn pri" onclick="shareCardImage()">${ic('share', 16)} ${t('Поделиться QR')}</button><button class="btn ghost" onclick="shareVcf()">${ic('user', 16)} ${t('Контакт (.vcf)')}</button></div>
+    <div class="hint">${t('Партнёр наводит камеру на QR — и ваш контакт сохраняется в его телефон.')}</div></div>
+    <div class="set-card">${F.map(([k, l]) => `<label class="lbl">${t(l)}</label><input class="inp" value="${esc(c[k] || '')}" onchange="S.set.myCard.${k}=this.value.trim();saveSettings();drawCard($('#cardCv')).catch(()=>{})">`).join('')}<div style="height:12px"></div></div>`;
+  return { top: titleTop(t('Моя визитка')), body: b, after: () => drawCard($('#cardCv')).catch(e => toast(e.message, 4000)) };
+};
 
 /* ================= DOCS ================= */
 function allFiles() {
@@ -290,14 +346,14 @@ function allFiles() {
 function docsListHTML() {
   const q = (S.docQ || '').toLowerCase(), fl = S.docFilter;
   const xs = allFiles().filter(({ f, it }) => (fl === 'all' || fileKind(f)[2] === fl) && (!q || (f.name + ' ' + it.title).toLowerCase().includes(q)));
-  if (!xs.length) return emptyBox('📁', 'Документов нет. Прикрепляйте их к задачам и встречам или загрузите здесь');
+  if (!xs.length) return emptyBox('📁', t('Документов нет. Прикрепляйте их к задачам и встречам или загрузите здесь'));
   return `<div class="list" style="padding:0 12px">${xs.map(({ f, it }) => `<div class="frow" onclick="openFile('${it.id}','${f.isRec ? 'rec' : f.id}')">${ficon(f)}<div class="fm"><b>${esc(f.name)}</b><span>${mb(f.size)} · ${esc(D.human((f.added || it.updated || '').slice(0, 10) || D.today()))} · ${esc(it.title.slice(0, 40))}</span></div>${f.fav ? `<span style="color:var(--ylw)">${ic('starf', 16)}</span>` : ''}</div>`).join('')}</div>`;
 }
 SCREENS.docs = () => {
   const fl = [['all', 'Все'], ['pdf', 'PDF'], ['docx', 'DOCX'], ['xlsx', 'XLSX'], ['img', 'Изображения'], ['audio', 'Аудио'], ['other', 'Другое']];
-  const b = `<div class="search">${ic('search', 18)}<input placeholder="Поиск документов…" value="${esc(S.docQ)}" oninput="S.docQ=this.value;$('#dl').innerHTML=docsListHTML()"></div>
-    <div class="chips">${fl.map(([k, l]) => `<button class="chip ${S.docFilter === k ? 'on' : ''}" onclick="S.docFilter='${k}';render()">${l}</button>`).join('')}</div><div id="dl">${docsListHTML()}</div>`;
-  return { top: titleTop('Документы', { back: "go('more')" }), body: b, dock: `<div class="fab-wrap"><label class="fab" aria-label="Загрузить">${ic('plus', 26)}<input type="file" multiple hidden onchange="uploadDocs(this)"></label></div>` };
+  const b = `<div class="search">${ic('search', 18)}<input placeholder="${esc(t('Поиск документов…'))}" value="${esc(S.docQ)}" oninput="S.docQ=this.value;$('#dl').innerHTML=docsListHTML()"></div>
+    <div class="chips">${fl.map(([k, l]) => `<button class="chip ${S.docFilter === k ? 'on' : ''}" onclick="S.docFilter='${k}';render()">${t(l)}</button>`).join('')}</div><div id="dl">${docsListHTML()}</div>`;
+  return { top: titleTop(t('Документы')), body: b, dock: `<div class="fab-wrap"><label class="fab" aria-label="${esc(t('Загрузить'))}">${ic('plus', 26)}<input type="file" multiple hidden onchange="uploadDocs(this)"></label></div>` };
 };
 
 /* ================= FAVORITES ================= */
@@ -305,110 +361,128 @@ SCREENS.fav = () => {
   const its = live().filter(i => i.fav);
   const fs = allFiles().filter(x => x.f.fav);
   let b = '';
-  const tasks = its.filter(i => i.kind !== 'note'), notes = its.filter(i => i.kind === 'note');
-  if (tasks.length) b += sec('Задачи и встречи') + listOf(sortByDate(tasks), { showDate: true });
-  if (notes.length) b += sec('Заметки') + `<div class="list">${notes.map(n => `<div class="ncard" data-open="${n.id}"><div class="nicon" style="--t:#f59e0b">${ic('note')}</div><div class="nmain"><b>${esc(n.title)}</b><p>${esc((n.desc || '').slice(0, 150))}</p></div></div>`).join('')}</div>`;
-  if (fs.length) b += sec('Документы и записи') + `<div class="list" style="padding:0 12px">${fs.map(({ f, it }) => `<div class="frow" onclick="openFile('${it.id}','${f.isRec ? 'rec' : f.id}')">${ficon(f)}<div class="fm"><b>${esc(f.name)}</b><span>${esc(it.title)}</span></div></div>`).join('')}</div>`;
-  if (!b) b = emptyBox('⭐', 'Отмечайте звёздочкой важные задачи, встречи, заметки, документы и записи');
-  return { top: titleTop('Избранное', { back: "go('more')" }), body: b };
+  const tasks = its.filter(isTaskKind), notes = its.filter(i => i.kind === 'note');
+  if (tasks.length) b += sec(t('Задачи и встречи')) + listOf(sortByDate(tasks), { showDate: true });
+  if (notes.length) b += sec(t('Заметки')) + `<div class="list">${notes.map(n => `<div class="ncard" data-open="${n.id}"><div class="nicon" style="--t:#f59e0b">${ic('note')}</div><div class="nmain"><b>${esc(n.title)}</b><p>${esc((n.desc || '').slice(0, 150))}</p></div></div>`).join('')}</div>`;
+  if (fs.length) b += sec(t('Документы и записи')) + `<div class="list" style="padding:0 12px">${fs.map(({ f, it }) => `<div class="frow" onclick="openFile('${it.id}','${f.isRec ? 'rec' : f.id}')">${ficon(f)}<div class="fm"><b>${esc(f.name)}</b><span>${esc(it.title)}</span></div></div>`).join('')}</div>`;
+  if (!b) b = emptyBox('⭐', t('Отмечайте звёздочкой важные задачи, встречи, заметки, документы и записи'));
+  return { top: titleTop(t('Избранное')), body: b };
 };
 
 /* ================= SEARCH ================= */
 function searchHTML(q) {
   q = (q || '').trim().toLowerCase();
-  if (q.length < 2) return '<div class="hint">Ищет по задачам, встречам, заметкам, документам, участникам и стенограммам. Для вопросов своими словами нажмите «Спросить MARKUS-A».</div>';
+  if (q.length < 2) return `<div class="hint">${t('Ищет по задачам, встречам, заметкам, контактам, документам и стенограммам. Для вопросов своими словами нажмите «Спросить MARKUS-A».')}</div>`;
   const words = q.split(/\s+/).filter(Boolean).map(w => w.length > 5 ? w.slice(0, w.length - 2) : w);
-  const hay = i => [i.title, i.desc, (i.participants || []).join(' '), i.place, i.transcript, i.summary ? JSON.stringify(i.summary) : '', (i.files || []).map(f => f.name).join(' ')].join(' ').toLowerCase();
+  const hay = i => [i.title, i.desc, (i.participants || []).join(' '), i.place, i.company, i.phone, i.telegram, i.transcript, i.summary ? JSON.stringify(i.summary) : '', (i.subtasks || []).map(s => s.text).join(' '), (i.files || []).map(f => f.name).join(' ')].join(' ').toLowerCase();
   const its = live().filter(i => { const h = hay(i); return words.every(w => h.includes(w)); });
   const fs = allFiles().filter(({ f }) => words.every(w => f.name.toLowerCase().includes(w)));
   let b = '';
-  const g = (t, a) => { if (a.length) b += sec(t, a.length) + listOf(sortByDate(a, true).slice(0, 30), { showDate: true }); };
-  g('Встречи', its.filter(i => i.kind === 'meeting'));
-  g('Задачи', its.filter(i => i.kind === 'task'));
+  const g = (ttl, a) => { if (a.length) b += sec(ttl, a.length) + listOf(sortByDate(a, true).slice(0, 30), { showDate: true }); };
+  g(t('Встречи'), its.filter(i => i.kind === 'meeting'));
+  g(t('Задачи'), its.filter(i => i.kind === 'task'));
+  const cs = its.filter(i => i.kind === 'contact');
+  if (cs.length) b += sec(t('Контакты'), cs.length) + `<div class="list">${cs.map(c => `<div class="ncard" data-open="${c.id}"><span class="pav">${esc(c.title[0].toUpperCase())}</span><div class="nmain"><b>${esc(c.title)}</b><span>${esc([c.company, c.phone].filter(Boolean).join(' · '))}</span></div></div>`).join('')}</div>`;
   const ns = its.filter(i => i.kind === 'note');
-  if (ns.length) b += sec('Заметки', ns.length) + `<div class="list">${ns.slice(0, 30).map(n => `<div class="ncard" data-open="${n.id}"><div class="nicon" style="--t:#f59e0b">${ic('note')}</div><div class="nmain"><b>${esc(n.title)}</b><p>${esc((n.desc || '').slice(0, 150))}</p></div></div>`).join('')}</div>`;
-  if (fs.length) b += sec('Документы', fs.length) + `<div class="list" style="padding:0 12px">${fs.slice(0, 30).map(({ f, it }) => `<div class="frow" onclick="openFile('${it.id}','${f.isRec ? 'rec' : f.id}')">${ficon(f)}<div class="fm"><b>${esc(f.name)}</b><span>${esc(it.title)}</span></div></div>`).join('')}</div>`;
-  return b || '<div class="hint">Точных совпадений нет — попробуйте «Спросить MARKUS-A».</div>';
+  if (ns.length) b += sec(t('Заметки'), ns.length) + `<div class="list">${ns.slice(0, 30).map(n => `<div class="ncard" data-open="${n.id}"><div class="nicon" style="--t:#f59e0b">${ic('note')}</div><div class="nmain"><b>${esc(n.title)}</b><p>${esc((n.desc || '').slice(0, 150))}</p></div></div>`).join('')}</div>`;
+  if (fs.length) b += sec(t('Документы'), fs.length) + `<div class="list" style="padding:0 12px">${fs.slice(0, 30).map(({ f, it }) => `<div class="frow" onclick="openFile('${it.id}','${f.isRec ? 'rec' : f.id}')">${ficon(f)}<div class="fm"><b>${esc(f.name)}</b><span>${esc(it.title)}</span></div></div>`).join('')}</div>`;
+  return b || `<div class="hint">${t('Точных совпадений нет — попробуйте «Спросить MARKUS-A».')}</div>`;
 }
 SCREENS.search = () => {
-  const b = `<div class="search">${ic('search', 18)}<input id="sq" placeholder="Например: Алишер, договор, аренда…" value="${esc(S.search || '')}" oninput="S.search=this.value;$('#sr').innerHTML=searchHTML(this.value)"></div>
-    <button class="btn pri full" onclick="askMarkus()">${ic('ai', 18)} Спросить MARKUS-A</button>
+  const b = `<div class="search">${ic('search', 18)}<input id="sq" placeholder="${esc(t('Например: Алишер, договор, аренда…'))}" value="${esc(S.search || '')}" oninput="S.search=this.value;$('#sr').innerHTML=searchHTML(this.value)"></div>
+    <button class="btn pri full" onclick="askMarkus()">${ic('ai', 18)} ${t('Спросить MARKUS-A')}</button>
     <div id="sa"></div><div id="sr">${searchHTML(S.search)}</div>`;
-  return { top: titleTop('Поиск', { back: "go('more')" }), body: b, after: () => { const i = $('#sq'); if (i && !S.search) i.focus(); } };
+  return { top: titleTop(t('Поиск')), body: b, after: () => { const i = $('#sq'); if (i && !S.search) i.focus(); } };
 };
 async function askMarkus() {
   let q = ($('#sq') && $('#sq').value.trim()) || '';
-  if (q.length < 3) q = await askChoice('Спросить MARKUS-A', 'Например: «Что мы решили с Алишером на прошлой встрече?», «Какие документы нужны на сегодняшнюю встречу?»', [], { type: 'text', label: 'Спросить' });
+  if (q.length < 3) q = await askChoice(t('Спросить MARKUS-A'), t('Например: «Что мы решили с Алишером на прошлой встрече?»'), [], { type: 'text', label: t('Спросить') });
   if (!q) return;
   const box = $('#sa'); if (!box) return;
-  box.innerHTML = `<div class="ai-box">MARKUS-A думает…</div>`;
+  box.innerHTML = `<div class="ai-box">${t('MARKUS-A думает…')}</div>`;
   try { const a = await AI.askData(q); box.innerHTML = `<div class="ai-box"><b>${esc(q)}</b>\n\n${esc(a)}</div>`; speak(a.slice(0, 300)); }
   catch (e) { box.innerHTML = `<div class="ai-box">${esc(e.message)}</div>`; }
 }
 
 /* ================= SETTINGS ================= */
-function setVal(k, v) { S.set[k] = v; saveSettings(); }
+function setVal(k, v) { S.set[k] = v; saveSettings(); if (['morningTime', 'eveTime', 'dayEnd', 'nagHours'].includes(k)) recomputeAll(); }
+async function recomputeAll() { for (const it of S.items.filter(isOpen)) await saveItem(it, { render: false }); }
 SCREENS.settings = () => {
   const st = S.set, cloudOk = Cloud.configured(), u = Cloud.user, p = Cloud.profile;
-  let b = `<div class="set-card"><label class="lbl">Как к вам обращаться</label><input class="inp" value="${esc(st.name)}" placeholder="Имя" onchange="setVal('name',this.value.trim());Cloud.user&&Cloud.saveProfile({name:this.value.trim()})">
-    <label class="lbl">Тема</label><div class="seg"><button class="${st.theme === 'light' ? 'on' : ''}" onclick="setVal('theme','light');applyTheme();render()">Светлая</button><button class="${st.theme === 'dark' ? 'on' : ''}" onclick="setVal('theme','dark');applyTheme();render()">Тёмная</button></div></div>`;
-  b += sec('Расписание') + `<div class="set-card"><div class="g2"><div><label class="lbl">Рабочий день с</label><input class="inp" type="time" value="${st.workStart}" onchange="setVal('workStart',this.value)"></div><div><label class="lbl">до</label><input class="inp" type="time" value="${st.workEnd}" onchange="setVal('workEnd',this.value)"></div></div>
-    <div class="hint">В этих часах MARKUS-A ищет свободные окна.</div>
-    <label class="lbl">Длительность задачи по умолчанию</label><select class="inp" onchange="setVal('defaultDur',+this.value)">${[15, 30, 45, 60, 90, 120].map(m => `<option value="${m}" ${st.defaultDur === m ? 'selected' : ''}>${durLabel(m)}</option>`).join('')}</select>
-    <label class="lbl">Напоминания по умолчанию</label><div class="chips wrapchips">${REMIND_OPTS.map(([m, l]) => `<button class="chip ${st.defaultRemind.includes(m) ? 'on' : ''}" onclick="toggleDefRem(${m})">${l}</button>`).join('')}</div>
-    <div class="sw-row"><div><b>Уведомления на этом устройстве</b><span>${'Notification' in window ? (Notification.permission === 'granted' ? 'Разрешены' : Notification.permission === 'denied' ? 'Запрещены — включите в настройках браузера' : 'Не включены') : 'Не поддерживаются'}</span></div>${'Notification' in window && Notification.permission === 'default' ? '<button class="chip-btn" onclick="askNotif()">Включить</button>' : ''}</div></div>`;
-  b += sec('AI-помощник') + `<div class="set-card"><label class="lbl">Ключ Google Gemini (бесплатный)</label><input class="inp" type="password" value="${esc(st.aiKey)}" placeholder="AIza…" onchange="setVal('aiKey',this.value.trim());Cloud.user&&Cloud.saveProfile({ai_key:this.value.trim()||null});render()">
-    <div class="hint">Получить: aistudio.google.com → Get API key. ${st.aiKey ? '<span class="ok">Ключ сохранён</span>' : ''}</div>
-    <label class="lbl">Модель</label><input class="inp" value="${esc(st.aiModel)}" onchange="setVal('aiModel',this.value.trim()||'gemini-2.5-flash')">
-    <div class="btns"><button class="btn ghost" onclick="testAI()">Проверить AI</button></div>
-    <label class="lbl">Задачи из встреч</label><div class="seg"><button class="${st.autoTasks === 'confirm' ? 'on' : ''}" onclick="setVal('autoTasks','confirm');render()">С подтверждением</button><button class="${st.autoTasks === 'auto' ? 'on' : ''}" onclick="setVal('autoTasks','auto');render()">Автоматически</button></div>
-    <div class="sw-row"><div><b>Отвечать голосом</b><span>MARKUS-A озвучивает ответы на голосовые команды</span></div><button class="sw ${st.voiceReply ? 'on' : ''}" onclick="setVal('voiceReply',!S.set.voiceReply);render()"></button></div></div>`;
-  b += sec('Облако и синхронизация') + '<div class="set-card">';
-  if (!cloudOk) b += `<div class="hint" style="margin-top:12px">Облако не настроено. Впишите адрес и ключ Supabase в файл <b>config.js</b> на GitHub (см. ИНСТРУКЦИЯ, шаг 3) — или сюда:</div>
+  const tInp = (k) => `<input class="inp" type="time" value="${st[k]}" onchange="setVal('${k}',this.value)">`;
+  let b = `<div class="set-card"><label class="lbl">${ic('globe', 14)} ${t('Язык / Language / Til')}</label>
+    <select class="inp" onchange="setLang(this.value)">${LANGS.map(l => `<option value="${l.c}" ${st.lang === l.c ? 'selected' : ''}>${l.n}</option>`).join('')}<optgroup label="${esc(t('Другие (перевод через AI)'))}">${EXTRA_LANGS.map(l => `<option value="${l.c}" ${st.lang === l.c ? 'selected' : ''}>${l.n}</option>`).join('')}</optgroup></select>
+    <label class="lbl">${t('Как к вам обращаться')}</label><input class="inp" value="${esc(st.name)}" placeholder="${esc(t('Имя'))}" onchange="setVal('name',this.value.trim())">
+    <label class="lbl">${t('Тема')}</label><div class="seg"><button class="${st.theme === 'light' ? 'on' : ''}" onclick="setVal('theme','light');applyTheme();render()">${t('Светлая')}</button><button class="${st.theme === 'dark' ? 'on' : ''}" onclick="setVal('theme','dark');applyTheme();render()">${t('Тёмная')}</button></div></div>`;
+  b += sec(t('Главный экран')) + `<div class="set-card"><label class="lbl">${t('Сортировка задач на сегодня')}</label><div class="seg"><button class="${st.homeSort === 'time' ? 'on' : ''}" onclick="setVal('homeSort','time');render()">${t('По времени')}</button><button class="${st.homeSort === 'prio' ? 'on' : ''}" onclick="setVal('homeSort','prio');render()">${t('По важности')}</button></div>
+    <label class="lbl">${t('Сколько задач показывать до «Показать все»')}</label><select class="inp" onchange="setVal('homeLimit',+this.value)">${[3, 5, 6, 8, 10, 15].map(n => `<option ${st.homeLimit === n ? 'selected' : ''}>${n}</option>`).join('')}</select><div style="height:12px"></div></div>`;
+  b += sec(t('Напоминания')) + `<div class="set-card">
+    <div class="g2"><div><label class="lbl">${t('Утреннее напоминание')}</label>${tInp('morningTime')}</div><div><label class="lbl">${t('Напоминание накануне')}</label>${tInp('eveTime')}</div></div>
+    <div class="g2"><div><label class="lbl">${t('Повторять каждые')}</label><select class="inp" onchange="setVal('nagHours',+this.value)">${[1, 2, 3, 4].map(n => `<option value="${n}" ${st.nagHours === n ? 'selected' : ''}>${n} ${t('ч')}</option>`).join('')}</select></div><div><label class="lbl">${t('Не беспокоить после')}</label>${tInp('dayEnd')}</div></div>
+    <div class="hint">${t('Для задач с отметкой «Напоминать до отметки «Готово»» напоминание повторяется, пока вы не отметите выполнение. Критические задачи включают это автоматически.')}</div>
+    <div class="g2"><div><label class="lbl">${t('Рабочий день с')}</label>${tInp('workStart')}</div><div><label class="lbl">${t('до')}</label>${tInp('workEnd')}</div></div>
+    <label class="lbl">${t('Длительность задачи по умолчанию')}</label><select class="inp" onchange="setVal('defaultDur',+this.value)">${[15, 30, 45, 60, 90, 120].map(m => `<option value="${m}" ${st.defaultDur === m ? 'selected' : ''}>${durLabel(m)}</option>`).join('')}</select>
+    <div class="sw-row"><div><b>${t('Уведомления на этом устройстве')}</b><span>${'Notification' in window ? (Notification.permission === 'granted' ? t('Разрешены') : Notification.permission === 'denied' ? t('Запрещены — включите в настройках браузера') : t('Не включены')) : t('Не поддерживаются')}</span></div>${'Notification' in window && Notification.permission === 'default' ? `<button class="chip-btn" onclick="askNotif()">${t('Включить')}</button>` : ''}</div></div>`;
+  b += sec(t('AI-помощник')) + `<div class="set-card"><label class="lbl">${t('Ключ Google Gemini (бесплатный)')}</label><input class="inp" type="password" value="${esc(st.aiKey)}" placeholder="AIza… / AQ.…" onchange="setVal('aiKey',this.value.trim());Cloud.user&&Cloud.saveProfile({ai_key:this.value.trim()||null});render()">
+    <div class="hint">${t('Получить: aistudio.google.com → Get API key.')} ${st.aiKey ? `<span class="ok">${t('Ключ сохранён')}</span>` : ''}</div>
+    <label class="lbl">${t('Модель')}</label><input class="inp" value="${esc(st.aiModel)}" onchange="setVal('aiModel',this.value.trim()||'gemini-2.5-flash')">
+    <div class="btns"><button class="btn ghost" onclick="testAI()">${t('Проверить AI')}</button></div>
+    <label class="lbl">${t('Задачи из встреч')}</label><div class="seg"><button class="${st.autoTasks === 'confirm' ? 'on' : ''}" onclick="setVal('autoTasks','confirm');render()">${t('С подтверждением')}</button><button class="${st.autoTasks === 'auto' ? 'on' : ''}" onclick="setVal('autoTasks','auto');render()">${t('Автоматически')}</button></div>
+    <div class="sw-row"><div><b>${t('Отвечать голосом')}</b><span>${t('MARKUS-A озвучивает ответы на голосовые команды')}</span></div><button class="sw ${st.voiceReply ? 'on' : ''}" onclick="setVal('voiceReply',!S.set.voiceReply);render()"></button></div></div>`;
+  b += sec(t('Облако и синхронизация')) + '<div class="set-card">';
+  if (!cloudOk) b += `<div class="hint" style="margin-top:12px">${t('Облако не настроено. Впишите адрес и ключ Supabase в файл config.js на GitHub — или сюда:')}</div>
     <label class="lbl">Supabase URL</label><input class="inp" id="s_url" placeholder="https://xxxx.supabase.co" value="${esc(st.sbUrl)}">
     <label class="lbl">Supabase key</label><input class="inp" id="s_key" placeholder="sb_publishable_…" value="${esc(st.sbKey)}">
-    <div class="btns"><button class="btn pri" onclick="setVal('sbUrl',$('#s_url').value.trim());setVal('sbKey',$('#s_key').value.trim());Cloud.init().then(render)">Подключить</button></div>`;
-  else if (!u) b += `<div class="hint" style="margin-top:12px">Войдите, чтобы данные синхронизировались между телефоном и компьютером, работали Telegram-бот и ссылки «Поделиться».</div>
+    <div class="btns"><button class="btn pri" onclick="setVal('sbUrl',$('#s_url').value.trim());setVal('sbKey',$('#s_key').value.trim());Cloud.init().then(render)">${t('Подключить')}</button></div>`;
+  else if (!u) b += `<div class="hint" style="margin-top:12px">${t('Войдите тем же email и паролем на всех своих устройствах — задачи будут одинаковыми везде.')}</div>
     <label class="lbl">Email</label><input class="inp" id="s_em" type="email" autocomplete="email">
-    <label class="lbl">Пароль</label><input class="inp" id="s_pw" type="password" autocomplete="current-password">
-    <div class="btns"><button class="btn pri" onclick="doAuth('in')">Войти</button><button class="btn ghost" onclick="doAuth('up')">Регистрация</button></div>`;
-  else b += `<div class="sw-row"><div><b>${esc(u.email)}</b><span>${Cloud.lastError ? '<span class="warn">Ошибка: ' + esc(Cloud.lastError) + '</span>' : Cloud.lastSync ? 'Синхронизировано ' + Cloud.lastSync.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : 'Подключено'}</span></div></div>
-    <div class="btns"><button class="btn ghost" onclick="Cloud.sync(true).then(render)">${ic('cloud', 16)} Синхронизировать</button><button class="btn ghost" onclick="Cloud.signOut().then(render)">Выйти</button></div>`;
+    <label class="lbl">${t('Пароль')}</label><input class="inp" id="s_pw" type="password" autocomplete="current-password">
+    <div class="btns"><button class="btn pri" onclick="doAuth('in')">${t('Войти')}</button><button class="btn ghost" onclick="doAuth('up')">${t('Регистрация')}</button></div>
+    <div class="btns"><button class="btn ghost" onclick="doAuth('link')">${ic('mail', 16)} ${t('Войти по ссылке из письма')}</button><button class="btn ghost" onclick="doAuth('reset')">${t('Забыли пароль?')}</button></div>`;
+  else b += `<div class="sw-row"><div><b>${esc(u.email)}</b><span>${Cloud.lastError ? '<span class="warn">' + t('Ошибка') + ': ' + esc(Cloud.lastError) + '</span>' : Cloud.lastSync ? t('Синхронизировано {t}', { t: Cloud.lastSync.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) }) : t('Подключено')}</span></div></div>
+    <div class="btns"><button class="btn ghost" onclick="Cloud.sync(true).then(render)">${ic('cloud', 16)} ${t('Синхронизировать')}</button><button class="btn ghost" onclick="changePassword()">${t('Сменить пароль')}</button></div>
+    <div class="btns"><button class="btn ghost" onclick="Cloud.signOut().then(render)">${t('Выйти')}</button></div>`;
   b += '</div>';
   b += sec('Telegram') + '<div class="set-card">';
-  if (!u) b += '<div class="hint" style="margin-top:12px">Сначала войдите в облако. Бот присылает напоминания, даже когда приложение закрыто, и принимает команды текстом и голосом.</div>';
-  else if (p && p.tg_chat_id) b += `<div class="sw-row"><div><b><span class="ok">Подключён</span></b><span>Напоминания и итоги приходят в Telegram</span></div></div><div class="btns"><button class="btn ghost" onclick="Cloud.sendTelegram('✅ Проверка связи MARKUS-A').then(()=>toast('Отправлено')).catch(e=>toast(e.message,4000))">Тест</button><button class="btn ghost" onclick="Cloud.unlinkTelegram().then(render)">Отключить</button></div>`;
-  else b += `<div class="hint" style="margin-top:12px">Бот будет присылать напоминания и итоги встреч, а вы сможете писать ему: «Завтра в 10 встреча с Алишером на час».</div><div class="btns"><button class="btn pri" onclick="doLinkTg()">Подключить Telegram</button><button class="btn ghost" onclick="Cloud.loadProfile().then(render)">Проверить</button></div>`;
+  if (!u) b += `<div class="hint" style="margin-top:12px">${t('Сначала войдите в облако. Бот присылает напоминания, даже когда приложение закрыто, и принимает команды текстом и голосом.')}</div>`;
+  else if (p && p.tg_chat_id) b += `<div class="sw-row"><div><b><span class="ok">${t('Подключён')}</span></b><span>${t('Напоминания и итоги приходят в Telegram')}</span></div></div><div class="btns"><button class="btn ghost" onclick="Cloud.sendTelegram('✅ ${esc(t('Проверка связи MARKUS-A'))}').then(()=>toast(t('Отправлено в Telegram ✓'))).catch(e=>toast(e.message,6000))">${t('Тест')}</button><button class="btn ghost" onclick="Cloud.unlinkTelegram().then(render)">${t('Отключить')}</button></div>`;
+  else b += `<div class="hint" style="margin-top:12px">${t('Бот будет присылать напоминания и итоги встреч, а вы сможете писать ему: «Завтра в 10 встреча с Алишером на час».')}</div><div class="btns"><button class="btn pri" onclick="doLinkTg()">${t('Подключить Telegram')}</button><button class="btn ghost" onclick="Cloud.loadProfile().then(render)">${t('Проверить')}</button></div>`;
   b += '</div>';
-  b += sec('Данные') + `<div class="set-card"><div class="hint" style="margin-top:12px">Резервная копия задач, встреч и заметок (без файлов).</div><div class="btns"><button class="btn ghost" onclick="exportBackup()">${ic('download', 16)} Скачать копию</button><label class="btn ghost">Загрузить копию<input type="file" accept=".json,application/json" hidden onchange="importBackup(this.files[0])"></label></div>
-    ${window._installPrompt ? `<div class="btns"><button class="btn pri" onclick="installApp()">Установить приложение</button></div>` : ''}</div>`;
-  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · версия 1.0</div>`;
-  return { top: titleTop('Настройки', { back: "go('more')" }), body: b };
+  b += sec(t('Данные')) + `<div class="set-card"><div class="hint" style="margin-top:12px">${t('Резервная копия задач, встреч, контактов и заметок (без файлов).')}</div><div class="btns"><button class="btn ghost" onclick="exportBackup()">${ic('download', 16)} ${t('Скачать копию')}</button><label class="btn ghost">${t('Загрузить копию')}<input type="file" accept=".json,application/json" hidden onchange="importBackup(this.files[0])"></label></div>
+    ${window._installPrompt ? `<div class="btns"><button class="btn pri" onclick="installApp()">${t('Установить приложение')}</button></div>` : ''}</div>`;
+  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 2.0</div>`;
+  return { top: titleTop(t('Настройки')), body: b };
 };
-function toggleDefRem(m) { const a = S.set.defaultRemind; const i = a.indexOf(m); if (i >= 0) a.splice(i, 1); else a.push(m); saveSettings(); render(); }
-async function testAI() { try { toast('Проверяю…'); const r = await AI.call([{ text: 'Ответь одним словом по-русски: работает' }]); toast('AI отвечает: ' + r.slice(0, 40) + ' ✓', 3000); } catch (e) { toast(e.message, 5000); } }
+async function testAI() { try { toast(t('Проверяю…')); const r = await AI.call([{ text: 'Reply with one word in ' + langName() + ': works' }]); toast(t('AI отвечает: {r} ✓', { r: r.slice(0, 40) }), 3000); } catch (e) { toast(e.message, 5000); } }
 async function doAuth(mode) {
-  const em = $('#s_em').value.trim(), pw = $('#s_pw').value;
-  if (!em || pw.length < 6) return toast('Введите email и пароль (от 6 символов)');
+  const em = ($('#s_em').value || '').trim(), pw = $('#s_pw').value;
+  if (!em) return toast(t('Введите email'));
   try {
-    if (mode === 'in') { await Cloud.signIn(em, pw); toast('Вход выполнен ✓'); }
-    else { const r = await Cloud.signUp(em, pw); toast(r === 'confirm' ? 'Проверьте почту и подтвердите email, затем войдите' : 'Аккаунт создан ✓', 5000); }
-  } catch (e) { toast(e.message, 4000); }
+    if (mode === 'link') { await Cloud.magicLink(em); await dialog({ title: t('Письмо отправлено'), text: t('Откройте письмо на ЭТОМ устройстве и нажмите ссылку — вход произойдёт автоматически. Если письма нет — проверьте «Спам» или подождите: бесплатный сервис отправляет не больше 2–3 писем в час.'), buttons: [{ l: 'OK', v: 1, p: 1 }] }); return; }
+    if (mode === 'reset') { await Cloud.resetPassword(em); await dialog({ title: t('Письмо отправлено'), text: t('Откройте письмо на этом устройстве и нажмите ссылку — приложение попросит придумать новый пароль.'), buttons: [{ l: 'OK', v: 1, p: 1 }] }); return; }
+    if (pw.length < 6) return toast(t('Пароль — минимум 6 символов'));
+    if (mode === 'in') { await Cloud.signIn(em, pw); toast(t('Вход выполнен ✓')); }
+    else { const r = await Cloud.signUp(em, pw); toast(r === 'confirm' ? t('Проверьте почту и подтвердите email, затем войдите') : t('Аккаунт создан ✓'), 5000); }
+  } catch (e) { toast(e.message, 5000); }
   render();
 }
+async function changePassword() {
+  const v = await dialog({ title: t('Новый пароль'), html: `<input class="inp" type="password" id="np1" placeholder="${esc(t('Новый пароль (от 6 символов)'))}"><input class="inp" type="password" id="np2" style="margin-top:8px" placeholder="${esc(t('Повторите пароль'))}">`, buttons: [{ l: t('Сохранить'), p: 1, v: sh => { const a = $('#np1', sh).value, b2 = $('#np2', sh).value; if (a.length < 6) { toast(t('Пароль — минимум 6 символов')); return false; } if (a !== b2) { toast(t('Пароли не совпадают')); return false; } return a; } }, { l: t('Отмена'), v: null }] });
+  if (!v) return;
+  try { await Cloud.setPassword(v); toast(t('Пароль изменён ✓'), 4000); } catch (e) { toast(e.message, 5000); }
+}
 async function doLinkTg() {
-  if (!cfg.bot) return toast('Впишите имя бота в config.js (TELEGRAM_BOT)', 4000);
+  if (!cfg.bot) return toast(t('Впишите имя бота в config.js (TELEGRAM_BOT)'), 4000);
   try {
     const code = await Cloud.linkTelegram();
-    const url = `https://t.me/${cfg.bot}?start=${code}`;
-    window.open(url, '_blank');
-    await dialog({ title: 'Подключение Telegram', text: `Откроется бот <b>@${esc(cfg.bot)}</b> — нажмите «Запустить» (Start). Если не открылся, отправьте боту:<br><b>/start ${code}</b><br><br>Затем вернитесь и нажмите «Проверить».`, buttons: [{ l: 'Проверить', v: 1, p: 1 }] });
+    window.open(`https://t.me/${cfg.bot}?start=${code}`, '_blank');
+    await dialog({ title: t('Подключение Telegram'), text: t('Откроется бот @{b} — нажмите «Запустить» (Start). Если не открылся, отправьте боту: /start {c}. Затем вернитесь и нажмите «Проверить».', { b: esc(cfg.bot), c: code }), buttons: [{ l: t('Проверить'), v: 1, p: 1 }] });
     await Cloud.loadProfile(); render();
-    toast(Cloud.profile && Cloud.profile.tg_chat_id ? 'Telegram подключён ✓' : 'Пока не подключён — отправьте боту /start ' + code, 5000);
+    toast(Cloud.profile && Cloud.profile.tg_chat_id ? t('Telegram подключён ✓') : t('Пока не подключён — отправьте боту /start {c}', { c: code }), 5000);
   } catch (e) { toast(e.message, 4000); }
 }
 function exportBackup() {
-  const data = { app: 'MARKUS-A', v: 1, exported: new Date().toISOString(), items: S.items.map(i => { const c = Object.assign({}, i); delete c._dirty; return c; }) };
+  const data = { app: 'MARKUS-A', v: 2, exported: new Date().toISOString(), items: S.items.map(i => { const c = Object.assign({}, i); delete c._dirty; return c; }), settings: Object.assign({}, S.set, { aiKey: '' }) };
   downloadBlob(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }), 'markus-a-backup-' + D.today() + '.json');
 }
 async function importBackup(file) {
@@ -418,7 +492,7 @@ async function importBackup(file) {
     if (!Array.isArray(d.items)) throw new Error();
     let n = 0;
     for (const it of d.items) { const loc = getItem(it.id); if (!loc || (it.updated || '') > (loc.updated || '')) { await saveItem(it, { render: false }); n++; } }
-    toast('Загружено: ' + n); render();
-  } catch (e) { toast('Файл не подходит'); }
+    toast(t('Загружено: {n}', { n })); render();
+  } catch (e) { toast(t('Файл не подходит')); }
 }
 async function installApp() { const p = window._installPrompt; if (!p) return; p.prompt(); await p.userChoice; window._installPrompt = null; render(); }
