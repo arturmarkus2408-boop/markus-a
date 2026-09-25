@@ -120,12 +120,31 @@ const Cloud = {
   async uploadFile(f) {
     if (f.cloud) return;
     const blob = await DB.get('files', f.id); if (!blob) return;
-    const { error } = await Cloud.sb.storage.from('files').upload(Cloud.user.id + '/' + f.id, blob, { upsert: true, contentType: f.type || blob.type || 'application/octet-stream' });
+    const type = f.type || blob.type || 'application/octet-stream';
+    let error = null;
+    if (blob.size > Cloud.PART) {
+      // the free cloud takes files up to 50 MB: a long recording goes in pieces and is glued back on download
+      const n = Math.ceil(blob.size / Cloud.PART);
+      for (let i = 0; i < n && !error; i++) {
+        ({ error } = await Cloud.sb.storage.from('files').upload(Cloud.user.id + '/' + f.id + '.part' + i, blob.slice(i * Cloud.PART, (i + 1) * Cloud.PART), { upsert: true, contentType: 'application/octet-stream' }));
+      }
+      if (!error) f.parts = n;
+    } else ({ error } = await Cloud.sb.storage.from('files').upload(Cloud.user.id + '/' + f.id, blob, { upsert: true, contentType: type }));
     if (!error) { f.cloud = true; delete f.cloudErr; if (S.set.cloudOnly) await DB.del('files', f.id); }   // «only in the cloud»: free the phone
     else f.cloudErr = /size|large|413/i.test(error.message || '') ? 'too_big' : (error.message || 'error');
   },
-  async download(fileId) {
+  PART: 40 * 1048576,
+  async download(fileId, parts, type) {
     if (!Cloud.sb || !Cloud.user) return null;
+    if (parts > 1) {
+      const out = [];
+      for (let i = 0; i < parts; i++) {
+        const { data, error } = await Cloud.sb.storage.from('files').download(Cloud.user.id + '/' + fileId + '.part' + i);
+        if (error || !data) return null;
+        out.push(data);
+      }
+      return new Blob(out, { type: type || 'application/octet-stream' });
+    }
     const { data, error } = await Cloud.sb.storage.from('files').download(Cloud.user.id + '/' + fileId);
     return error ? null : data;
   },
@@ -137,8 +156,8 @@ const Cloud = {
       for (const it of dirty) {
         for (const f of allFileMetas(it)) await Cloud.uploadFile(f);
         if (it.recording && it.recording.fileId) {
-          const rf = { id: it.recording.fileId, type: it.recording.mime, cloud: it.recording.cloud };
-          await Cloud.uploadFile(rf); it.recording.cloud = rf.cloud;
+          const rf = { id: it.recording.fileId, type: it.recording.mime, cloud: it.recording.cloud, parts: it.recording.parts };
+          await Cloud.uploadFile(rf); it.recording.cloud = rf.cloud; if (rf.parts) it.recording.parts = rf.parts; if (rf.cloudErr) it.recording.cloudErr = rf.cloudErr; else delete it.recording.cloudErr;
         }
       }
       if (dirty.length) {
@@ -188,7 +207,10 @@ const Cloud = {
     if (!Cloud.user) throw new Error(t('Войдите в аккаунт (Настройки → Облако)'));
     if (!Cloud.profile || !Cloud.profile.tg_chat_id) throw new Error(t('Telegram не подключён (Настройки → Telegram)'));
     const { data, error } = await Cloud.sb.functions.invoke('telegram-bot', { body: Object.assign({ action: 'venue' }, v) });
-    if (error) throw new Error(t('Не удалось отправить') + ': ' + error.message);
+    if (error) {
+      let msg = error.message; try { const j = error.context && await error.context.json(); if (j && j.error) msg = j.error; } catch (e) { }
+      throw new Error(t('Не удалось отправить') + ': ' + msg);
+    }
     if (data && data.error) throw new Error(data.error);
   },
   async unlinkTelegram() { await Cloud.saveProfile({ tg_chat_id: null, tg_code: null }); },
@@ -196,8 +218,12 @@ const Cloud = {
     if (!Cloud.user) throw new Error(t('Войдите в аккаунт (Настройки → Облако)'));
     if (!Cloud.profile || !Cloud.profile.tg_chat_id) throw new Error(t('Telegram не подключён (Настройки → Telegram)'));
     const { data, error } = await Cloud.sb.functions.invoke('telegram-bot', { body: { action: 'send', text } });
-    if (error) throw new Error(t('Не удалось отправить') + ': ' + (Cloud._fnErr ? Cloud._fnErr : error.message));
+    if (error) {
+      let msg = error.message; try { const j = error.context && await error.context.json(); if (j && j.error) msg = j.error; } catch (e) { }
+      throw new Error(t('Не удалось отправить') + ': ' + msg);
+    }
     if (data && data.error) throw new Error(data.error);
+    return data;
   },
 
   /* ---------- sharing ---------- */
@@ -208,7 +234,7 @@ const Cloud = {
     const files = [];
     for (const f of (it.files || [])) {
       await Cloud.uploadFile(f);
-      if (f.cloud) {
+      if (f.cloud && !(f.parts > 1)) {   // files over 40 MB are stored in pieces and cannot be shared as one link
         const { data } = await Cloud.sb.storage.from('files').createSignedUrl(Cloud.user.id + '/' + f.id, secs, { download: f.name });
         if (data) files.push({ name: f.name, type: f.type, size: f.size, url: data.signedUrl });
       }

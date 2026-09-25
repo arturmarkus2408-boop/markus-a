@@ -82,7 +82,7 @@ function placesBlock(it, o = {}) {
       <div class="place-h">${ic('pin', 18)}<div style="flex:1;min-width:0"><b>${esc(placeTitle(p))}</b>${p.address && p.address !== placeTitle(p) ? `<span>${esc(p.address)}</span>` : ''}${p.note ? `<span class="place-n">${esc(p.note)}</span>` : ''}</div></div>
       ${(p.photos || []).length ? `<div class="thumbs">${p.photos.map(f => `<button class="thumb" data-ph="${it.id}|${f.id}" onclick="openFile('${it.id}','${f.id}')" aria-label="${esc(f.name)}"></button>`).join('')}</div>` : ''}
       <div class="chips wrapchips" style="margin:8px 0 0">${mapLinks(p).map(([n, u]) => `<a class="chip" href="${esc(u)}" target="_blank" rel="noopener">${ic('globe', 13)} ${esc(n)}</a>`).join('')}</div>
-      <div class="btns" style="margin-top:8px"><button class="btn ghost" onclick="sharePlace('${it.id}','${p.id}')">${ic('share', 16)} ${t('Отправить партнёру')}</button>${g && tg ? `<button class="btn ghost" onclick="placeToTelegram('${it.id}','${p.id}')">${ic('tg', 16)} ${t('Точкой в Telegram')}</button>` : ''}</div>
+      <div class="btns" style="margin-top:8px"><button class="btn ghost" onclick="sharePlace('${it.id}','${p.id}')">${ic('share', 16)} ${t('Отправить партнёру')}</button>${g && tg ? `<button class="btn ghost" onclick="placeToTelegram('${it.id}','${p.id}',this)">${ic('tg', 16)} ${t('Точкой в Telegram')}</button>` : ''}</div>
     </div>`;
   }).join('') + (o.after || '');
 }
@@ -110,11 +110,12 @@ async function sharePlace(holderId, pid) {
   }
   shareText(text);
 }
-async function placeToTelegram(holderId, pid) {
+async function placeToTelegram(holderId, pid, btn) {
   const it = holderOf(holderId); const p = it && (it.locations || []).find(x => x.id === pid);
   const g = placeGeo(p); if (!g) return toast(t('Для точки нужны координаты — выберите место на карте'), 4000);
+  const ok = await withBusy(btn, () => Cloud.sendVenue({ lat: g.lat, lng: g.lng, title: placeTitle(p), address: [p.address, p.note].filter(Boolean).join(' · ') || (it.title || '') }), { ok: t('Отправлено') });
+  if (!ok) return;
   try {
-    await Cloud.sendVenue({ lat: g.lat, lng: g.lng, title: placeTitle(p), address: [p.address, p.note].filter(Boolean).join(' · ') || (it.title || '') });
     await dialog({ title: t('Точка отправлена вам в Telegram'), text: t('Откройте чат с ботом, нажмите и удерживайте сообщение с картой → «Переслать» → выберите партнёра. Он получит настоящую точку на карте Telegram.'), buttons: [{ l: t('Понятно'), v: 1, p: 1 }] });
   } catch (e) { toast(e.message, 5000); }
 }

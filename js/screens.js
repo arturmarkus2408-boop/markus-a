@@ -270,7 +270,7 @@ SCREENS.meeting = () => {
   if (m.summary || m.transcript) {
     const tabs = [['short', 'Кратко'], ['dec', 'Решения'], ['tasks', 'Задачи'], ['tr', 'Стенограмма']];
     b += sec(t('AI-итоги встречи')) + `<div class="seg">${tabs.map(([k, l]) => `<button class="${S.meetTab === k ? 'on' : ''}" onclick="S.meetTab='${k}';render()">${t(l)}${k === 'tasks' && (m.proposed || []).length ? ' (' + m.proposed.length + ')' : ''}</button>`).join('')}</div><div class="card">${meetTab(m)}</div>`;
-    if (m.summary) b += `<button class="btn ghost full" onclick="meetToTelegram('${m.id}')">${ic('send', 16)} ${t('Отправить итоги в Telegram')}</button>`;
+    if (m.summary) b += `<button class="btn pri full" onclick="meetToTelegram('${m.id}',false,this)">${ic('send', 16)} ${t('Отправить итоги в Telegram')}</button><div id="tgst_${m.id}">${tgStateHtml(m)}</div>`;
   }
   const menu = `<button class="tbtn" onclick="meetFav('${m.id}')">${ic(m.fav ? 'starf' : 'star')}</button><button class="tbtn" onclick="openShare('${m.id}')">${ic('share')}</button><button class="tbtn" onclick="openEditor('meeting',{id:'${m.id}'})">${ic('edit')}</button>`;
   return {
@@ -278,8 +278,8 @@ SCREENS.meeting = () => {
     after: async () => {
       loadThumbs($('#screen'));
       const box = $('#m_audio'); if (!box || !m.recording) return;
-      const blob = await getFileBlob({ id: m.recording.fileId, cloud: m.recording.cloud });
-      box.innerHTML = blob ? `<audio controls style="width:100%" src="${URL.createObjectURL(blob)}"></audio>` : `<div class="hint warn">${t('Аудио есть только на другом устройстве')}</div>`;
+      const blob = await getFileBlob({ id: m.recording.fileId, cloud: m.recording.cloud, parts: m.recording.parts, type: m.recording.mime });
+      box.innerHTML = blob ? `<audio controls style="width:100%" src="${URL.createObjectURL(blob)}"></audio><button class="btn ghost full" style="margin-top:6px" onclick="audioBoost(this)">🔊 ${t('Усилить тихие звуки')}</button>` : `<div class="hint warn">${t('Аудио есть только на другом устройстве')}</div>`;
     }
   };
 };
@@ -304,17 +304,33 @@ async function meetDelRec(id) {
   const m = getItem(id); if (!(await confirmDel(t('Удалить запись встречи?')))) return;
   await DB.del('files', m.recording.fileId); m.recording = null; await saveItem(m); toast(t('Запись удалена'));
 }
-async function meetToTelegram(id, silent) {
+/* where the summary went: shown right under the button, so it is never a mystery */
+function tgStateHtml(m) {
+  const bot = cfg.bot, chat = bot ? `<a href="https://t.me/${esc(bot)}" target="_blank" rel="noopener">${t('Открыть чат с ботом')} @${esc(bot)}</a>` : '';
+  const g = m.tg;
+  if (!g) return `<div class="tg-state muted">${bot ? t('Итоги придут в Telegram, в чат с ботом @{b} (не в «Избранное»)', { b: bot }) : ''}</div>`;
+  const when = new Date(g.at), tm = (D.fmt(when) === D.today() ? '' : D.short(D.fmt(when)) + ' ') + pad(when.getHours()) + ':' + pad(when.getMinutes());
+  return g.ok ? `<div class="tg-state okc">✓ ${t('Доставлено в Telegram')} ${tm}${chat ? ' · ' + chat : ''}</div>`
+    : `<div class="tg-state bad">⚠ ${t('Не отправлено')} (${tm}): ${esc(g.err || '')}</div>`;
+}
+async function meetToTelegram(id, silent, btn) {
   const m = getItem(id), s = m.summary || {};
   const h = x => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const L = (ttl, a) => a && a.length ? `\n\n<b>${h(ttl)}</b>\n` + a.map(x => '• ' + h(typeof x === 'string' ? x : `${x.who ? x.who + ': ' : ''}${x.what || ''}${x.due ? ' (' + x.due + ')' : ''}`)).join('\n') : '';
   const made = (m.proposed || []).filter(x => x.state === 'created').map(x => { const it = getItem(x.itemId); return it ? (it.kind === 'meeting' ? '👥 ' : '☐ ') + it.title + ' — ' + whenLabel(it) : null; }).filter(Boolean);
   const tx = `📋 <b>${h(t('Итоги встречи'))}: ${h(m.title)}</b>\n${h(m.date ? D.human(m.date) : '')} ${h(timeLabel(m))}` + L(t('Кратко'), s.short) + L(t('Решения'), s.decisions) + L(t('Обязательства'), s.commitments) + L(t('Сроки'), s.deadlines) + L(t('Следующие шаги'), s.next) + L(t('Добавлено в планы'), made);
-  try { await Cloud.sendTelegram(tx.slice(0, 4000)); if (!silent) toast(t('Отправлено в Telegram ✓')); } catch (e) { if (!silent) toast(e.message, 4000); }
+  const run = async () => {
+    try { await Cloud.sendTelegram(tx.slice(0, 30000)); m.tg = { at: new Date().toISOString(), ok: true }; }
+    catch (e) { m.tg = { at: new Date().toISOString(), ok: false, err: e.message || String(e) }; throw e; }
+    finally { await saveItem(m, { render: false }); const el = document.getElementById('tgst_' + id); if (el) el.innerHTML = tgStateHtml(m); }
+  };
+  if (silent) { try { await run(); } catch (e) { notify(t('Итоги не ушли в Telegram'), m.title + ': ' + (e.message || ''), { tag: 'tgerr-' + id, id }); } return; }
+  const ok = await withBusy(btn, run, { ok: t('Отправлено') });
+  if (ok && cfg.bot) toast(t('Готово ✓ Смотрите в Telegram: чат с ботом @{b}', { b: cfg.bot }), 5000);
 }
 
 /* ================= RECORDINGS ================= */
-async function recBlob(id) { const m = getItem(id); const b = m && m.recording && await getFileBlob({ id: m.recording.fileId, cloud: m.recording.cloud }); if (!b) toast(t('Аудио есть только на другом устройстве')); return b; }
+async function recBlob(id) { const m = getItem(id); const b = m && m.recording && await getFileBlob({ id: m.recording.fileId, cloud: m.recording.cloud, parts: m.recording.parts, type: m.recording.mime }); if (!b) toast(t('Аудио есть только на другом устройстве')); return b; }
 async function shareRec(id) { const m = getItem(id), b = await recBlob(id); if (!b) return; const f = findFile(id, 'rec').f; shareFile(new Blob([b], { type: f.type }), f.name, m.title); }
 async function saveRec(id) { const b = await recBlob(id); if (!b) return; downloadBlob(b, findFile(id, 'rec').f.name); toast(t('Сохранено в «Загрузки» телефона')); }
 SCREENS.recordings = () => {
@@ -444,6 +460,11 @@ SCREENS.settings = () => {
     <div class="sw-row"><div><b>${t('Автозапись всех новых встреч')}</b><span>${t('Включается в каждой новой встрече (можно выключить в конкретной встрече)')}</span></div><button class="sw ${st.autoRecDefault ? 'on' : ''}" onclick="setVal('autoRecDefault',!S.set.autoRecDefault);render()"></button></div>
     <div class="g2"><div><label class="lbl">${t('Начинать до встречи за')}</label><select class="inp" onchange="setVal('recPre',+this.value);recomputeAll()">${[0, 1, 2, 3, 5, 10].map(n => `<option value="${n}" ${+st.recPre === n ? 'selected' : ''}>${n} ${t('мин')}</option>`).join('')}</select></div>
     <div><label class="lbl">${t('Писать после конца ещё')}</label><select class="inp" onchange="setVal('recPost',+this.value)">${[0, 10, 15, 30, 45, 60, 90].map(n => `<option value="${n}" ${+st.recPost === n ? 'selected' : ''}>${n} ${t('мин')}</option>`).join('')}</select></div></div>
+    <label class="lbl">${t('Качество записи')}</label><div class="seg">${Object.keys(REC_Q).map(k => `<button class="${(st.recQuality || 'high') === k ? 'on' : ''}" onclick="setVal('recQuality','${k}');render()">${t({ eco: 'Экономное', high: 'Высокое', max: 'Максимальное' }[k])}</button>`).join('')}</div>
+    <div class="hint">${t('≈ {m} МБ за час записи.', { m: REC_Q[st.recQuality || 'high'].mbh })} ${(st.recQuality || 'high') === 'eco' ? t('Речь понятна, но тихие звуки и шорохи хуже.') : (st.recQuality === 'max' ? t('Стерео, лучшее качество. Облако (1 ГБ бесплатно) заполнится примерно за {h} часов записей.', { h: Math.round(1024 / REC_Q.max.mbh) }) : t('Рекомендуется: чётко слышны тихие голоса. Облако (1 ГБ бесплатно) вмещает около {h} часов записей.', { h: Math.round(1024 / REC_Q.high.mbh) }))}</div>
+    <label class="lbl">${t('Режим микрофона')}</label>${REC_MODES.map(([k, l, d]) => `<div class="sw-row" style="cursor:pointer" onclick="setVal('recMode','${k}');render()"><div><b>${(st.recMode || 'auto') === k ? '◉' : '○'} ${t(l)}</b><span>${t(d)}</span></div></div>`).join('')}
+    <div class="btns"><button class="btn ghost" onclick="micTest()">${ic('mic', 16)} ${t('Тест микрофона: сравнить режимы')}</button></div>
+    <div class="hint">${t('Больше всего на качество влияет место телефона: микрофоном (нижний край) к собеседникам, на столе, не в кармане и не в сумке, подальше от кофемашины и колонок. Для записи издалека в шуме лучше всего внешний петличный микрофон с разъёмом USB-C — приложение подхватит его само.')}</div>
     <label class="lbl">${t('Экстренная запись — не дольше')}</label><select class="inp" onchange="setVal('recMaxMin',+this.value)">${[60, 120, 180, 240, 360].map(n => `<option value="${n}" ${+st.recMaxMin === n ? 'selected' : ''}>${durLabel(n)}</option>`).join('')}</select>
     <div class="sw-row"><div><b>${t('Незаметная запись')}</b><span>${t('Во время записи на экране нет большого окна записи — только маленькая точка в углу. Значок микрофона Android в строке состояния скрыть нельзя.')}</span></div><button class="sw ${st.recDiscreet ? 'on' : ''}" onclick="setVal('recDiscreet',!S.set.recDiscreet);render()"></button></div>
     <div class="sw-row"><div><b>${t('AI-итоги сразу после записи')}</b><span>${t('Стенограмма, итоги, задачи и встречи по датам — без вопросов')}</span></div><button class="sw ${st.autoAI ? 'on' : ''}" onclick="setVal('autoAI',!S.set.autoAI);render()"></button></div>
@@ -468,13 +489,13 @@ SCREENS.settings = () => {
     <div class="btns"><button class="btn pri" onclick="doAuth('in')">${t('Войти')}</button><button class="btn ghost" onclick="doAuth('up')">${t('Регистрация')}</button></div>
     <div class="btns"><button class="btn ghost" onclick="doAuth('link')">${ic('mail', 16)} ${t('Войти по ссылке из письма')}</button><button class="btn ghost" onclick="doAuth('reset')">${t('Забыли пароль?')}</button></div>`;
   else b += `<div class="sw-row"><div><b>${esc(u.email)}</b><span>${Cloud.lastError ? '<span class="warn">' + t('Ошибка') + ': ' + esc(Cloud.lastError) + '</span>' : Cloud.lastSync ? t('Синхронизировано {t}', { t: Cloud.lastSync.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) }) : t('Подключено')}</span></div></div>
-    <div class="btns"><button class="btn ghost" onclick="Cloud.sync(true).then(render)">${ic('cloud', 16)} ${t('Синхронизировать')}</button><button class="btn ghost" onclick="changePassword()">${t('Сменить пароль')}</button></div>
+    <div class="btns"><button class="btn ghost" onclick="withBusy(this,async()=>{await Cloud.sync();if(Cloud.lastError)throw new Error(t('Ошибка синхронизации')+': '+Cloud.lastError);},{busy:t('Синхронизирую…'),ok:t('Синхронизировано')}).then(()=>setTimeout(render,2600))">${ic('cloud', 16)} ${t('Синхронизировать')}</button><button class="btn ghost" onclick="changePassword()">${t('Сменить пароль')}</button></div>
     <div class="btns"><button class="btn ghost" onclick="Cloud.signOut().then(render)">${t('Выйти')}</button></div>`;
   b += '</div>';
   b += sec('Telegram') + '<div class="set-card">';
   if (!u) b += `<div class="hint" style="margin-top:12px">${t('Сначала войдите в облако. Бот присылает напоминания, даже когда приложение закрыто, и принимает команды текстом и голосом.')}</div>`;
-  else if (p && p.tg_chat_id) b += `<div class="sw-row"><div><b><span class="ok">${t('Подключён')}</span></b><span>${t('Напоминания и итоги приходят в Telegram')}</span></div></div><div class="btns"><button class="btn ghost" onclick="Cloud.sendTelegram('✅ ${esc(t('Проверка связи MARKUS-A'))}').then(()=>toast(t('Отправлено в Telegram ✓'))).catch(e=>toast(e.message,6000))">${t('Тест')}</button><button class="btn ghost" onclick="Cloud.unlinkTelegram().then(render)">${t('Отключить')}</button></div>`;
-  else b += `<div class="hint" style="margin-top:12px">${t('Бот будет присылать напоминания и итоги встреч, а вы сможете писать ему: «Завтра в 10 встреча с Алишером на час».')}</div><div class="btns"><button class="btn pri" onclick="doLinkTg()">${t('Подключить Telegram')}</button><button class="btn ghost" onclick="Cloud.loadProfile().then(render)">${t('Проверить')}</button></div>`;
+  else if (p && p.tg_chat_id) b += `<div class="sw-row"><div><b><span class="ok">${t('Подключён')}</span></b><span>${t('Напоминания и итоги приходят в Telegram')}</span></div></div><div class="btns"><button class="btn ghost" onclick="withBusy(this,()=>Cloud.sendTelegram('✅ ${esc(t('Проверка связи MARKUS-A'))}'),{ok:t('Отправлено')}).then(r=>r&&cfg.bot&&toast(t('Готово ✓ Смотрите в Telegram: чат с ботом @{b}',{b:cfg.bot}),5000))">${t('Тест')}</button><button class="btn ghost" onclick="Cloud.unlinkTelegram().then(render)">${t('Отключить')}</button></div>`;
+  else b += `<div class="hint" style="margin-top:12px">${t('Бот будет присылать напоминания и итоги встреч, а вы сможете писать ему: «Завтра в 10 встреча с Алишером на час».')}</div><div class="btns"><button class="btn pri" onclick="doLinkTg()">${t('Подключить Telegram')}</button><button class="btn ghost" onclick="withBusy(this,async()=>{await Cloud.loadProfile();if(!(Cloud.profile&&Cloud.profile.tg_chat_id))throw new Error(t('Бот ещё не подключён: откройте ссылку «Подключить Telegram» и нажмите в боте «Запустить»'));},{busy:t('Проверяю…'),ok:t('Подключён')}).then(r=>r&&setTimeout(render,1500))">${t('Проверить')}</button></div>`;
   b += '</div>';
   b += sec(t('Файлы и память телефона')) + `<div class="set-card"><div class="hint" style="margin-top:12px">${t('Файлы, фото и записи хранятся в памяти приложения на телефоне. Если вы вошли в облако — копия уходит в облако Supabase (бесплатно 1 ГБ, файл до 50 МБ) и открывается на любом устройстве.')}</div>
     <div class="hint" id="st_info"></div>
@@ -482,7 +503,7 @@ SCREENS.settings = () => {
     <div class="btns"><button class="btn ghost" onclick="freePhoneMemory()">${t('Освободить память телефона')}</button></div></div>`;
   b += sec(t('Данные')) + `<div class="set-card"><div class="hint" style="margin-top:12px">${t('Резервная копия задач, встреч, контактов и заметок (без файлов).')}</div><div class="btns"><button class="btn ghost" onclick="exportBackup()">${ic('download', 16)} ${t('Скачать копию')}</button><label class="btn ghost">${t('Загрузить копию')}<input type="file" accept=".json,application/json" hidden onchange="importBackup(this.files[0])"></label></div>
     ${window._installPrompt ? `<div class="btns"><button class="btn pri" onclick="installApp()">${t('Установить приложение')}</button></div>` : ''}</div>`;
-  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 3.1</div>`;
+  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 3.2</div>`;
   return { top: titleTop(t('Настройки')), body: b, after: async () => { const i = await storageInfo(); const el = $('#st_info'); if (el) el.textContent = t('Занято на телефоне: {a} · файлов: {n}, из них в облаке: {c}', { a: mb(i.used), n: i.n, c: i.cloud }); } };
 };
 async function testAI() { try { toast(t('Проверяю…')); const r = await AI.call([{ text: 'Reply with one word in ' + langName() + ': works' }]); toast(t('AI отвечает: {r} ✓', { r: r.slice(0, 40) }), 3000); } catch (e) { toast(e.message, 5000); } }
@@ -536,4 +557,29 @@ async function keepAwakeForRec() {
   try { if (navigator.wakeLock) { awakeRec = await navigator.wakeLock.request('screen'); awakeRec.addEventListener('release', () => { awakeRec = null; }); } } catch (e) { }
   toast(awakeRec ? t('Экран не погаснет — запись начнётся сама.') : t('Этот браузер не умеет держать экран включённым'), 4000);
   render();
+}
+
+/* playback: makes quiet, distant speech and rustles audible (only while listening — the file is not changed) */
+function audioBoost(btn) {
+  const a = btn.parentElement.querySelector('audio'); if (!a) return;
+  let g = a._boost;
+  try {
+    if (!g) {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = ctx.createMediaElementSource(a);
+      const lev = ctx.createDynamicsCompressor();   // evens out: loud parts down, quiet parts up
+      lev.threshold.value = -42; lev.knee.value = 12; lev.ratio.value = 8; lev.attack.value = 0.005; lev.release.value = 0.3;
+      const gain = ctx.createGain(); gain.gain.value = 16;
+      const lim = ctx.createDynamicsCompressor();   // protects the ears and the speaker from sudden loud sounds
+      lim.threshold.value = -4; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.1;
+      lev.connect(gain); gain.connect(lim); lim.connect(ctx.destination);
+      g = a._boost = { ctx, src, lev, on: false };
+    }
+    g.ctx.resume();
+    g.src.disconnect();
+    g.on = !g.on;
+    g.src.connect(g.on ? g.lev : g.ctx.destination);
+    btn.classList.toggle('pri', g.on); btn.classList.toggle('ghost', !g.on);
+    btn.textContent = g.on ? '🔊 ' + t('Усиление включено — нажмите, чтобы выключить') : '🔊 ' + t('Усилить тихие звуки');
+  } catch (e) { toast(t('Этот телефон не умеет усиливать звук при прослушивании'), 4000); }
 }

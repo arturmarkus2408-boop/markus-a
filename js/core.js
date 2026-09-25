@@ -96,7 +96,7 @@ const DEFAULTS = {
   homeSort: 'time', homeLimit: 6, defaultRemind: [30],
   aiKey: '', aiModel: 'gemini-2.5-flash', voiceReply: true, autoTasks: 'auto',
   autoRecDefault: true, recPre: 2, recPost: 30, recDiscreet: true, autoAI: true, recMaxMin: 180,
-  sendSummaryTg: true, cloudOnly: false, speechRate: 1,
+  sendSummaryTg: true, cloudOnly: false, speechRate: 1, recQuality: 'high', recMode: 'auto',
   sbUrl: '', sbKey: '', botName: '',
   categories: DEFAULT_CATS, noteCats: DEFAULT_NOTE_CATS,
   myCard: {
@@ -185,7 +185,7 @@ async function storeFile(file, name) {
 async function getFileBlob(f) {
   let b = await DB.get('files', f.id);
   if (!b && f.cloud && window.Cloud && Cloud.user) {
-    b = await Cloud.download(f.id);
+    b = await Cloud.download(f.id, f.parts, f.type);
     if (b && !S.set.cloudOnly) await DB.put('files', b, f.id);
   }
   return b || null;
@@ -221,6 +221,21 @@ let toastT;
 function toast(msg, ms = 2600) {
   const el = $('#toast'); el.textContent = msg; el.classList.add('show');
   clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), ms);
+}
+/* a button that shows what is happening: pressed → «…» (can't be pressed twice) → ✓ green / ✗ red */
+async function withBusy(btn, fn, o = {}) {
+  if (btn && btn.dataset && btn.dataset.busy) return;
+  const html = btn ? btn.innerHTML : '';
+  if (btn) { btn.dataset.busy = '1'; btn.disabled = true; btn.classList.add('is-busy'); btn.innerHTML = `<i class="bspin"></i> ${esc(o.busy || t('Отправляю…'))}`; }
+  let res, failed = false;
+  try { res = await fn(); }
+  catch (e) { failed = true; toast(e && e.message ? e.message : String(e), 7000); }
+  if (btn) {
+    btn.classList.remove('is-busy'); btn.classList.add(failed ? 'is-fail' : 'is-ok');
+    btn.innerHTML = failed ? '✗ ' + esc(t('Не получилось')) : '✓ ' + esc(o.ok || t('Готово'));
+    setTimeout(() => { btn.classList.remove('is-ok', 'is-fail'); btn.innerHTML = html; btn.disabled = false; delete btn.dataset.busy; }, failed ? 3500 : 2500);
+  }
+  return failed ? undefined : (res === undefined ? true : res);
 }
 function beep() {
   try {

@@ -130,6 +130,8 @@ function nativeSync() {
   if (nativeTest && nativeTest.stop > now) recs.push(nativeTest); else nativeTest = null;
   rem.sort((a, b) => a.at - b.at);
   try { NATIVE.schedule(JSON.stringify({ recs, rem: rem.slice(0, 200) })); } catch (e) { }
+  // recording quality also for recordings the phone starts by itself (new app versions only)
+  try { if (typeof NATIVE.setRecConfig === 'function') NATIVE.setRecConfig(JSON.stringify({ mode: S.set.recMode || 'auto', q: S.set.recQuality || 'high' })); } catch (e) { }
 }
 
 /* ---------- recordings made by Android → into the meeting (then AI summary as usual) ---------- */
@@ -154,6 +156,12 @@ async function nativeImport() {
       }
       const blob = new Blob(parts, { type: 'audio/mp4' });
       if (!blob.size) { NATIVE.recDone(r.file); continue; }
+      const mt = /^mictest~([^~]+)~(\w+)$/.exec(r.id || '');
+      if (mt) {   // a fragment of the microphone test → into the test meeting's materials
+        const tm = getItem(mt[1]);
+        if (tm) { const md = REC_MODES.find(x => x[0] === mt[2]); tm.files = tm.files || []; tm.files.push(await storeFile(blob, (REC_MODES.indexOf(md) + 1) + ' ' + t(md ? md[1] : mt[2]) + '.m4a')); await saveItem(tm, { render: false }); }
+        NATIVE.recDone(r.file); n++; continue;
+      }
       let m = getItem(r.id);
       if (!m || m.deleted) {
         const st = new Date(r.started || Date.now()), tm = pad(st.getHours()) + ':' + pad(st.getMinutes());
@@ -247,4 +255,44 @@ async function nativeBoot() {
     const v = await dialog({ title: t('Настройте телефон для автозаписи'), text: esc(t('Чтобы встречи записывались сами, даже на заблокированном телефоне, приложению нужно несколько разрешений. Это займёт 1 минуту.')), buttons: [{ l: t('Настроить'), v: 1, p: 1 }, { l: t('Позже'), v: 0 }] });
     if (v) { go('settings'); setTimeout(() => { const el = document.getElementById('nativeSec'); if (el) el.scrollIntoView({ block: 'start' }); }, 200); }
   }
+}
+
+/* ---------- microphone test: 3 short recordings, one per mode — listen and pick the best one ---------- */
+async function micTest() {
+  if (!NATIVE || typeof NATIVE.recStartCfg !== 'function') {
+    return dialog({ title: t('Тест микрофона'), text: esc(t('Тест работает в новой версии Android-приложения. Обновите приложение по инструкции (новый MARKUS-A.apk).')), buttons: [{ l: t('Понятно'), v: 1, p: 1 }] });
+  }
+  if (Rec.active) return toast(t('Сначала остановите текущую запись'), 4000);
+  const SEC = 15;
+  const go1 = await dialog({ title: t('Тест микрофона'), text: esc(t('Запишу 3 фрагмента по {s} секунд — по одному на каждый режим микрофона. Положите телефон так, как он обычно лежит на встрече (на стол, в 2–3 метрах от вас), и говорите обычным голосом — можно тихо, можно при включённом шуме. Потом прослушаете и выберете лучший режим.', { s: SEC })), buttons: [{ l: t('Начать'), v: 1, p: 1 }, { l: t('Отмена'), v: 0 }] });
+  if (!go1) return;
+  const now = D.nowTime();
+  const m = newItem('meeting', { title: t('Тест микрофона') + ' ' + D.short(D.today()) + ' ' + now, date: D.today(), start: now, end: D.addMin(now, 2), reminders: [], autoRecord: false, category: 'meet' });
+  m.test = true; await saveItem(m, { render: false });
+  const sh = openSheet(`<div class="dlg-t">${t('Тест микрофона')}</div><div class="dlg-x" id="mt_s"></div><div class="rec-time" id="mt_c" style="color:var(--acc);font-size:44px;text-align:center"></div>`, { cls: 'center' });
+  const entry = topSheet(); if (entry) entry.locked = true;
+  const status = () => { try { return JSON.parse(NATIVE.recStatus()); } catch (e) { return {}; } };
+  let failed = '';
+  for (let i = 0; i < REC_MODES.length && !failed; i++) {
+    const [k, l] = REC_MODES[i];
+    $('#mt_s', sh).innerHTML = `<b>${t('Режим {n} из {all}', { n: i + 1, all: REC_MODES.length })}: ${esc(t(l))}</b><br>${esc(t('Говорите — идёт запись'))}`;
+    const r = NATIVE.recStartCfg('mictest~' + m.id + '~' + k, m.title, Date.now() + SEC * 1000, JSON.stringify({ mode: k, q: S.set.recQuality || 'high' }));
+    if (r !== 'ok') { failed = r === 'noperm' ? t('Нет доступа к микрофону') : r === 'busy' ? t('Уже идёт другая запись') : t('Не удалось начать запись'); break; }
+    const t0 = Date.now();
+    await sleep(1500);
+    while (status().active && Date.now() - t0 < (SEC + 15) * 1000) { $('#mt_c', sh).textContent = Math.max(0, Math.ceil(SEC - (Date.now() - t0) / 1000)); await sleep(400); }
+    if (status().active) { NATIVE.recStop(); await sleep(1500); }
+    await sleep(700);
+  }
+  if (entry) entry.locked = false;
+  closeSheet();
+  await nativeImport();
+  const mm = getItem(m.id);
+  const files = (mm && mm.files) || [];
+  if (failed || !files.length) return toast(failed || t('Не удалось начать запись'), 5000);
+  const urls = [];
+  for (const f of files) { const b = await getFileBlob(f); urls.push(b ? URL.createObjectURL(b) : ''); }
+  const v = await dialog({ title: t('Какой режим слышно лучше?'), text: files.map((f, i) => `<div style="margin:10px 0"><b>${esc(f.name.replace(/\.m4a$/, ''))}</b><audio controls style="width:100%;margin-top:4px" src="${urls[i]}"></audio></div>`).join('') + `<div class="hint">${esc(t('Записи сохранены во встрече «Тест микрофона» (Материалы). Её можно удалить.'))}</div>`,
+    buttons: REC_MODES.slice(0, files.length).map(([k, l], i) => ({ l: (i + 1) + ' · ' + t(l), v: k, p: k === (S.set.recMode || 'auto') })).concat([{ l: t('Оставить как есть'), v: null }]) });
+  if (v) { setVal('recMode', v); nativeSync(); toast(t('Режим микрофона: {m}', { m: t(REC_MODES.find(x => x[0] === v)[1]) }), 4000); if (S.route === 'settings') render(); }
 }

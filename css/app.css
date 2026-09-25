@@ -387,3 +387,16 @@ details.help div{padding:0 0 14px;color:var(--txt2);line-height:1.55;white-space
 [data-pal=bronze] .dk-mic i{box-shadow:0 8px 24px rgba(212,162,90,.35)}
 .rec-card.quiet{border-color:var(--brd)}
 .rec-card.quiet .rec-mini{background:var(--txt3);animation:none}
+
+/* v3.2 — every button visibly reacts to a tap; busy / done / failed states */
+.btn,.chip-btn,.rs-btn,.link,.chip,.theme-b,.drive-b,.mic-sm,.sw,.seg button,.tbtn,.frow,.att-i{transition:transform .08s ease,filter .12s ease,background-color .2s ease,color .2s ease}
+.btn:active,.chip-btn:active,.rs-btn:active,.chip:active,.theme-b:active,.drive-b:active,.mic-sm:active,.seg button:active,.tbtn:active,.frow:active,.att-i:active{transform:scale(.96);filter:brightness(.88)}
+.link:active{opacity:.6}
+.btn.is-busy{opacity:.85;cursor:progress}
+.btn.is-ok{background:var(--grn)!important;color:#fff!important;border-color:var(--grn)!important;opacity:1}
+.btn.is-fail{background:var(--red)!important;color:#fff!important;border-color:var(--red)!important;opacity:1}
+.btn:disabled.is-ok,.btn:disabled.is-fail{opacity:1}
+i.bspin{width:15px;height:15px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;display:inline-block;animation:spin .8s linear infinite;flex:none}
+.tg-state{font-size:12.5px;margin:6px 2px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.tg-state.okc{color:var(--grn)}.tg-state.bad{color:var(--red)}
+.tg-state a{color:var(--acc);font-weight:700;text-decoration:none}

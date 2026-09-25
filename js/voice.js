@@ -203,6 +203,17 @@ async function slotFlow(p) {
    v3: starts by itself (auto-record) without questions, stops by itself at end + N minutes,
    "discreet" mode shows no full-screen recorder (only a tiny dot), saves automatically and
    hands the audio to AI for a summary. */
+/* recording quality (Settings → Запись встреч). MB per hour matter: the free cloud keeps 1 GB. */
+const REC_Q = { eco: { kbps: 32, mbh: 14 }, high: { kbps: 64, mbh: 29 }, max: { kbps: 128, mbh: 58 } };
+const REC_MODES = [['auto', 'Обычный', 'Телефон сам подстраивает громкость. Подходит почти всегда.'],
+  ['far', 'Дальний и тихий звук', 'Для телефона в 2–5 м от собеседников: ловит тихую речь и шорохи.'],
+  ['noisy', 'Шумное место', 'Улица, кафе: глушит фон, оставляет голоса. Тихие звуки может срезать.']];
+function recConstraints() {
+  const m = S.set.recMode;
+  if (m === 'far') return { echoCancellation: false, noiseSuppression: false, autoGainControl: true, channelCount: 1 };
+  if (m === 'clean') return { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+  return { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: S.set.recQuality === 'max' ? 2 : 1 };
+}
 const Rec = {
   active: null,
   pickMime() {
@@ -225,10 +236,10 @@ const Rec = {
     if (NATIVE) return Rec.startNative(meetingId, o);
     if (!navigator.mediaDevices || !window.MediaRecorder) { if (!o.auto) toast(t('Запись не поддерживается этим браузером')); return false; }
     let stream;
-    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: recConstraints() }); }
     catch (e) { if (!o.auto) toast(t('Нет доступа к микрофону. Разрешите его в настройках браузера.'), 4000); return false; }
     const mime = Rec.pickMime();
-    const opts = { audioBitsPerSecond: 32000 }; if (mime) opts.mimeType = mime;
+    const opts = { audioBitsPerSecond: REC_Q[S.set.recQuality] ? REC_Q[S.set.recQuality].kbps * 1000 : 64000 }; if (mime) opts.mimeType = mime;
     let mr; try { mr = new MediaRecorder(stream, opts); } catch (e) { mr = new MediaRecorder(stream); }
     const m = getItem(meetingId);
     const a = { meetingId, mr, stream, chunks: [], started: Date.now(), pausedTotal: 0, pauseAt: null, mime: mr.mimeType || mime || 'audio/webm', size: 0,
@@ -273,6 +284,7 @@ const Rec = {
     if (!NATIVE) return;
     let st; try { st = JSON.parse(NATIVE.recStatus()); } catch (e) { return; }
     let a = Rec.active;
+    if (st.active && /^mictest~/.test(st.id || '')) return;   // the microphone test runs by itself
     if (st.active) {
       if (!a || a.meetingId !== st.id) {   // started by the phone itself (schedule) — show it here too
         if (a) clearInterval(a.tick);
@@ -450,7 +462,7 @@ async function processMeeting(id, o = {}) {
   }
   const step = (txt) => { if (sh) { $('#pm_1', sh).className = 'ok'; $('#pm_2', sh).className = 'spin'; $('#pm_s', sh).textContent = txt; } };
   try {
-    const blob = await getFileBlob({ id: m.recording.fileId, cloud: m.recording.cloud });
+    const blob = await getFileBlob({ id: m.recording.fileId, cloud: m.recording.cloud, parts: m.recording.parts, type: m.recording.mime });
     if (!blob) throw new Error(t('Аудиофайл не найден на этом устройстве'));
     m.transcript = await AI.transcribe(blob, m.recording.mime, m, pct => sh && ($('#pm_s', sh).textContent = t('Загружаю запись для AI… {p}%', { p: pct })));
     await saveItem(m, { render: false });
