@@ -102,7 +102,7 @@ const Cloud = {
     clearTimeout(Cloud._pt);
     Cloud._pt = setTimeout(async () => {
       if (!Cloud.user || !Cloud.sb) return;
-      const st = S.set, prefs = { morningTime: st.morningTime, eveTime: st.eveTime, dayEnd: st.dayEnd, nagHours: st.nagHours, lang: st.lang };
+      const st = S.set, prefs = { morningTime: st.morningTime, eveTime: st.eveTime, dayEnd: st.dayEnd, nagHours: st.nagHours, lang: st.lang, recPre: st.recPre };
       const err = await Cloud.saveProfile({ prefs, lang: st.lang });
       if (err) await Cloud.saveProfile({ lang: st.lang }).catch(() => { }); // migration not run yet — ignore
     }, 800);
@@ -121,7 +121,8 @@ const Cloud = {
     if (f.cloud) return;
     const blob = await DB.get('files', f.id); if (!blob) return;
     const { error } = await Cloud.sb.storage.from('files').upload(Cloud.user.id + '/' + f.id, blob, { upsert: true, contentType: f.type || blob.type || 'application/octet-stream' });
-    if (!error) f.cloud = true;
+    if (!error) { f.cloud = true; delete f.cloudErr; if (S.set.cloudOnly) await DB.del('files', f.id); }   // «only in the cloud»: free the phone
+    else f.cloudErr = /size|large|413/i.test(error.message || '') ? 'too_big' : (error.message || 'error');
   },
   async download(fileId) {
     if (!Cloud.sb || !Cloud.user) return null;
@@ -134,7 +135,7 @@ const Cloud = {
     try {
       const dirty = S.items.filter(i => i._dirty);
       for (const it of dirty) {
-        for (const f of (it.files || [])) await Cloud.uploadFile(f);
+        for (const f of allFileMetas(it)) await Cloud.uploadFile(f);
         if (it.recording && it.recording.fileId) {
           const rf = { id: it.recording.fileId, type: it.recording.mime, cloud: it.recording.cloud };
           await Cloud.uploadFile(rf); it.recording.cloud = rf.cloud;
@@ -183,6 +184,13 @@ const Cloud = {
     await Cloud.saveProfile({ tg_code: code });
     return code;
   },
+  async sendVenue(v) {
+    if (!Cloud.user) throw new Error(t('Войдите в аккаунт (Настройки → Облако)'));
+    if (!Cloud.profile || !Cloud.profile.tg_chat_id) throw new Error(t('Telegram не подключён (Настройки → Telegram)'));
+    const { data, error } = await Cloud.sb.functions.invoke('telegram-bot', { body: Object.assign({ action: 'venue' }, v) });
+    if (error) throw new Error(t('Не удалось отправить') + ': ' + error.message);
+    if (data && data.error) throw new Error(data.error);
+  },
   async unlinkTelegram() { await Cloud.saveProfile({ tg_chat_id: null, tg_code: null }); },
   async sendTelegram(text) {
     if (!Cloud.user) throw new Error(t('Войдите в аккаунт (Настройки → Облако)'));
@@ -205,9 +213,18 @@ const Cloud = {
         if (data) files.push({ name: f.name, type: f.type, size: f.size, url: data.signedUrl });
       }
     }
+    const places = [];
+    for (const l of (it.locations || [])) {
+      const photos = [];
+      for (const f of (l.photos || [])) {
+        await Cloud.uploadFile(f);
+        if (f.cloud) { const { data } = await Cloud.sb.storage.from('files').createSignedUrl(Cloud.user.id + '/' + f.id, secs); if (data) photos.push({ name: f.name, url: data.signedUrl }); }
+      }
+      places.push({ name: placeTitle(l), address: l.address || '', note: l.note || '', links: mapLinks(l), photos });
+    }
     const snap = {
       kind: it.kind, title: it.title, desc: it.desc, date: it.date, start: it.start, end: it.end, place: it.place,
-      participants: it.participants, priority: it.priority, category: catName(catOf(it)), files, location: it.location || '', lang: S.set.lang,
+      participants: it.participants, priority: it.priority, category: catName(catOf(it)), files, location: it.location || '', places, links: (it.links || []).map(l => ({ title: l.title, url: l.url })), lang: S.set.lang,
       summary: it.summary ? { short: it.summary.short, decisions: it.summary.decisions, next: it.summary.next } : null,
       owner: S.set.name || ''
     };

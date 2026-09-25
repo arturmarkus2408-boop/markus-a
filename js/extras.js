@@ -93,7 +93,7 @@ function inviteText(m) {
     '📅 ' + t('Встреча') + ': ' + m.title,
     m.date ? '🗓 ' + D.long(m.date) + (m.start ? ', ' + timeLabel(m) : '') : '',
     m.place ? '📍 ' + m.place : '',
-    m.location ? '🗺 ' + m.location : '',
+    ...(m.locations || []).map(p => ['📍 ' + placeTitle(p) + (p.note ? ' — ' + p.note : '')].concat(mapLinks(p).slice(0, 3).map(([n, u]) => '   ' + n + ': ' + u)).join('\n')),
     '',
     '— ' + (S.set.name || me.fn) + (me.phone ? ', ' + me.phone : '') + (me.telegram ? ', t.me/' + tgUser(me.telegram) : '')
   ].filter((x, i, a) => x !== '' || i === a.length - 2).join('\n');

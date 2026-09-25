@@ -209,6 +209,8 @@ function render() {
   $('#top').innerHTML = r.top || '';
   $('#screen').innerHTML = r.body || '';
   $('#dock').innerHTML = r.dock || '';
+  if (S.route !== 'drive' && typeof driveWake !== 'undefined' && driveWake) driveWakeOff();
+  if (typeof recDot === 'function') recDot();
   if (r.after) r.after();
 }
 document.addEventListener('click', e => {
@@ -272,17 +274,19 @@ function openEditor(kind = 'task', preset = {}) {
       <label class="lbl">${isMeet ? t('Участники') : t('Связанные люди и компании')}</label>
       <div id="e_people"></div>
       ${isMeet ? `<label class="lbl">${t('Место')}</label><input class="inp" id="e_place" value="${esc(E.place || '')}" placeholder="${esc(t('Офис, ресторан, адрес'))}">
-      <label class="lbl">${t('Локация (ссылка из Яндекс Карт, 2ГИС, Google Maps, Telegram)')}</label>
-      <div class="inp-mic"><input class="inp" id="e_loc" value="${esc(E.location || '')}" placeholder="https://…"><button class="mic-sm" onclick="edPasteLoc()" title="${esc(t('Вставить'))}">${ic('clip')}</button><button class="mic-sm" onclick="edMyLoc()" title="${esc(t('Моя геопозиция'))}">${ic('pin')}</button></div>
-      <div class="sw-row" style="margin-top:8px"><div><b>${t('Автозапись встречи')}</b><span>${t('В начале встречи MARKUS-A начнёт запись, если приложение открыто; иначе пришлёт уведомление с кнопкой')}</span></div><button class="sw ${E.autoRecord ? 'on' : ''}" id="e_auto"></button></div>` : ''}
+      <div class="sw-row" style="margin-top:8px"><div><b>${t('Автозапись встречи')}</b><span>${t('Запись начнётся сама за {a} мин до начала и остановится через {b} мин после конца. Работает, если MARKUS-A открыт на экране; иначе придёт уведомление и сообщение в Telegram с кнопкой «Начать запись».', { a: S.set.recPre, b: S.set.recPost })}</span></div><button class="sw ${E.autoRecord ? 'on' : ''}" id="e_auto"></button></div>` : ''}
+      <label class="lbl">${isMeet ? t('Локации и фото ориентиров') : t('Места')}</label>
+      <div id="e_places"></div>
       <label class="lbl">${t('Описание')}</label>
       <textarea class="inp" id="e_desc" placeholder="${esc(t('Детали, адрес, ссылки'))}">${esc(E.desc || '')}</textarea>
       <label class="lbl">${t('Подзадачи')} <span class="muted">— ${t('у каждой может быть свой срок и зависимость')}</span></label>
       <div id="e_subs"></div>
       <div class="inp-mic" style="margin-top:6px"><input class="inp" id="e_subnew" placeholder="${esc(t('Добавить шаг и нажать +'))}" onkeydown="if(event.key==='Enter'){event.preventDefault();edAddSub()}"><button class="mic-sm" onclick="edAddSub()">${ic('plus')}</button></div>
-      <label class="lbl">${t('Документы')}</label>
+      <label class="lbl">${isMeet ? t('Материалы к встрече') : t('Документы')} <span class="muted">— ${t('документы, фото, рисунки, аудио, видео')}</span></label>
       <div id="e_files"></div>
-      <label class="att-add" style="margin-top:8px">${ic('clip', 16)} ${t('Прикрепить файл')}<input type="file" multiple hidden onchange="edAddFiles(this)"></label>
+      <label class="att-add" style="margin-top:8px">${ic('clip', 16)} ${t('Прикрепить файлы')}<input type="file" multiple hidden onchange="edAddFiles(this)"></label>
+      <label class="lbl">${t('Ссылки')}</label>
+      <div id="e_links"></div>
       <div class="sh-foot">${isNew ? '' : `<button class="btn danger" onclick="edDelete()">${ic('trash', 18)}</button>`}<button class="btn pri" style="flex:1" id="e_save">${isNew ? t('Создать') : t('Сохранить')}</button></div>
     `, { cls: 'tall', onClose: () => { stopDictation(); if (!saved) res(null); } });
     const renderRem = () => {
@@ -297,7 +301,7 @@ function openEditor(kind = 'task', preset = {}) {
     $('#e_nag', sh).onclick = () => { E.nag = !E.nag; $('#e_nag', sh).classList.toggle('on', E.nag); };
     if ($('#e_auto', sh)) $('#e_auto', sh).onclick = () => $('#e_auto', sh).classList.toggle('on');
     $('#e_rep', sh).onchange = edRepeatUI;
-    edRepeatUI(); edRenderSubs(); edRenderFiles(); edRenderPeople();
+    edRepeatUI(); edRenderSubs(); edRenderFiles(); edRenderPeople(); edRenderPlaces(); edRenderLinks();
     if (isNew && !E.title) setTimeout(() => $('#e_title', sh) && $('#e_title', sh).focus(), 250);
     $('#e_save', sh).onclick = async () => {
       const r = await edCollect(); if (!r) return;
@@ -387,7 +391,13 @@ function openSubEditor(it, subId) {
   });
 }
 function edRenderFiles() { $('#e_files').innerHTML = (E.files || []).length ? attList(E.files, E.id, true) : ''; }
-async function edAddFiles(inp) { for (const f of inp.files) E.files.push(await storeFile(f)); inp.value = ''; edRenderFiles(); }
+async function edAddFiles(inp) {
+  for (const f of inp.files) {
+    if (f.size > 45 * 1048576) toast(t('«{x}» больше 45 МБ — в облако бесплатно не поместится, останется только на этом телефоне. Для больших видео лучше добавить ссылку.', { x: f.name }), 6000);
+    E.files.push(await storeFile(/^image\//.test(f.type) ? await shrinkImage(f, 2200) : f, f.name));
+  }
+  inp.value = ''; edRenderFiles();
+}
 function edRemoveFile(fid) { E.files = E.files.filter(f => f.id !== fid); edRenderFiles(); }
 function edRenderPeople() {
   const box = $('#e_people'); if (!box) return;
@@ -419,7 +429,8 @@ async function edCollect() {
   const cs = (E.contactIds || []).map(getItem).filter(Boolean);
   E.participants = Array.from(new Set(cs.map(c => c.title).concat(E.participants || [])));
   E.desc = $('#e_desc').value.trim();
-  if (E.kind === 'meeting') { E.place = $('#e_place').value.trim(); E.location = $('#e_loc').value.trim(); E.autoRecord = $('#e_auto').classList.contains('on'); if (E.autoRecord && !E.reminders.includes(0)) E.reminders.push(0); }
+  if (E.kind === 'meeting') { E.place = $('#e_place').value.trim(); E.autoRecord = $('#e_auto').classList.contains('on'); }
+  if (E.start) E.needsTime = false;
   const pending = $('#e_subnew').value.trim(); if (pending) E.subtasks.push({ id: uid(), text: pending, done: false, due: null, time: null, after: null, afterDays: null });
   if (E.repeat.type === 'days' && !(E.repeat.days || []).length && E.date) E.repeat.days = [D.parse(E.date).getDay()];
   const msgs = []; (E.subtasks || []).forEach(s => msgs.push(...validateSub(E, s)));
@@ -467,8 +478,12 @@ function renderTaskDetail(id, sh) {
     ${shown.map(s => { const bl = isBlocked(it, s); return `<div class="sub ${s.done ? 'done' : ''} ${bl ? 'sub-wait' : ''}"><button class="chk sq ${s.done ? 'on' : ''}" style="--c:${c.color}" onclick="subToggle('${id}','${s.id}')">${s.done ? ic('checkmark', 12) : bl ? ic('lock', 11) : ''}</button><span class="sub-b" onclick="tdEditSub('${id}','${s.id}')"><span class="sub-t">${esc(s.text)}</span><span class="sub-m">${subMeta(it, s)}</span></span><button class="xbtn" style="width:30px;height:30px" onclick="tdEditSub('${id}','${s.id}')">${ic('edit', 14)}</button></div>`; }).join('')}
     ${it.desc ? `<div class="h4">${t('Описание')}</div><div class="pre">${linkify(it.desc)}</div>` : ''}
     ${(it.participants || []).length ? `<div class="h4">${t('Люди и компании')}</div><div class="pills">${peoplePills(it)}</div>` : ''}
+    ${(it.locations || []).length ? `<div class="h4">${t('Места')}</div>${placesBlock(it)}` : ''}
     ${(it.files || []).length ? `<div class="h4">${t('Документы')}</div>${attList(it.files, id, false)}` : ''}
+    ${(it.links || []).length ? `<div class="h4">${t('Ссылки')}</div>${linksBlock(it)}` : ''}
+    ${resultBlock(it)}
     <div class="sh-foot"><button class="btn ghost" onclick="openShare('${id}')" aria-label="${esc(t('Поделиться'))}">${ic('share', 18)}</button><button class="btn ghost" style="flex:1" onclick="closeSheet();openEditor('${it.kind}',{id:'${id}'})">${ic('edit', 18)} ${t('Изменить')}</button><button class="btn danger" onclick="tdDelete('${id}')">${ic('trash', 18)}</button></div>`;
+  loadThumbs(box);
 }
 function linkify(s) { return esc(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>'); }
 function peoplePills(it) {
@@ -480,7 +495,13 @@ function refreshDetail(id) { const s = topSheet(); if (s && $('#td', s.w)) rende
 async function tdStatus(id, st) {
   const it = getItem(id);
   if (st === it.status && st !== 'progress') return;
-  if (st === 'done') await toggleDone(id);
+  if (st === 'done') {
+    await toggleDone(id);
+    if (it.kind === 'task' && getItem(id).status === 'done' && !(it.result && (it.result.note || (it.result.files || []).length))) {
+      const v = await dialog({ title: t('Задача выполнена ✓'), text: t('Прикрепить итоговый документ или скриншот, что работу приняли?'), buttons: [{ l: t('Прикрепить результат'), v: 1, p: 1 }, { l: t('Не сейчас'), v: 0 }] });
+      if (v) await openResultEditor(id);
+    }
+  }
   else if (st === 'cancelled') await askCancelReason(it);
   else { await setStatus(it, st); toast(t('Статус: {s}', { s: t(STATUS[st]) })); }
   refreshDetail(id);
@@ -543,7 +564,7 @@ function findFile(holderId, fileId) {
   const it = getItem(holderId) || (E && E.id === holderId ? E : null);
   if (!it) return {};
   if (fileId === 'rec' && it.recording) return { it, f: { id: it.recording.fileId, name: t('Запись') + ' — ' + it.title + ' ' + (it.date || '') + '.' + recExt(it.recording.mime), type: (it.recording.mime || 'audio/webm').split(';')[0], size: it.recording.size, cloud: it.recording.cloud, fav: it.recording.fav, isRec: true } };
-  return { it, f: (it.files || []).find(x => x.id === fileId) };
+  return { it, f: allFileMetas(it).find(x => x.id === fileId) };
 }
 async function openFile(holderId, fileId) {
   const { it, f } = findFile(holderId, fileId); if (!f) return;

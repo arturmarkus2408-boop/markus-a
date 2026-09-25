@@ -24,6 +24,11 @@ SCREENS.home = () => {
   let b = `<div class="hello"><h2>${greet}${name}!</h2><p>${esc(D.long(td))}</p></div>`;
   if ('Notification' in window && Notification.permission === 'default') b += `<div class="banner" onclick="askNotif()">${ic('bell')}<div><b>${t('Включите уведомления')}</b><span>${t('Чтобы MARKUS-A напоминал о делах')}</span></div>${ic('right')}</div>`;
   if (!AI.ready()) b += `<div class="banner" onclick="go('settings')">${ic('ai')}<div><b>${t('Подключите AI (бесплатно)')}</b><span>${t('Для голосовых команд и анализа встреч')}</span></div>${ic('right')}</div>`;
+  // meeting with auto-record within the next hour → keep the app open (a website cannot switch the microphone on by itself otherwise)
+  const soon = S.items.filter(i => !i.deleted && i.kind === 'meeting' && i.autoRecord && !i.recording && i.date === td && i.start && isOpen(i))
+    .map(i => ({ i, at: D.dt(td, i.start).getTime() - (+S.set.recPre || 0) * 60000 })).filter(x => x.at - Date.now() < 60 * 60000 && x.at > Date.now() - 60000).sort((a, b) => a.at - b.at)[0];
+  if (soon && !Rec.active) b += `<div class="banner" style="color:var(--acc)" onclick="keepAwakeForRec()">${ic('mic')}<div><b>${t('Автозапись в {t}: {x}', { t: new Date(soon.at).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }), x: esc(soon.i.title) })}</b><span>${awakeRec ? t('Экран не погаснет — запись начнётся сама.') : t('Оставьте MARKUS-A открытым. Нажмите, чтобы экран не гас до встречи.')}</span></div></div>`;
+  S.items.filter(i => !i.deleted && i.kind === 'meeting' && i.needsTime && !i.start && i.date === td && isOpen(i)).forEach(i => { b += `<div class="banner" style="color:var(--ora)" onclick="askMeetingTime('${i.id}')">${ic('clock')}<div><b>${t('Сегодня встреча без времени')}: ${esc(i.title)}</b><span>${t('Нажмите, чтобы указать время и включить автозапись')}</span></div>${ic('right')}</div>`; });
   const nowCard = (label, it) => `<div class="now" data-open="${it.id}"><div class="now-b"><div class="now-l">${label}</div><div class="now-time">${esc(timeLabel(it))}</div><div class="now-t">${esc(it.title)}</div><div class="now-s">${esc(catName(catOf(it)))}${it.place ? ' · ' + esc(it.place) : ''}</div></div>${ic('right')}</div>`;
   if (cur) b += nowCard(t('Сейчас'), cur);
   else if (nx) b += nowCard(t('Далее сегодня'), nx);
@@ -40,7 +45,7 @@ SCREENS.home = () => {
     <button class="dk" onclick="openEditor('meeting')">${ic('users', 22)}<span>${t('Встреча')}</span></button>
     <button class="dk-mic" onclick="openVoice()"><i>${ic('mic', 28)}</i>${t('Сказать MARKUS-A')}</button>
     <button class="dk" onclick="openNoteEditor()">${ic('note', 22)}<span>${t('Заметка')}</span></button>
-    <button class="dk" onclick="quickRecord()">${ic('rec', 22)}<span>${t('Запись')}</span></button></div>`;
+    <button class="dk dk-rec" onclick="quickRecord()">${ic('rec', 22)}<span>${t('Запись')}</span></button></div>`;
   return { top: brandTop(), body: b, dock };
 };
 
@@ -210,7 +215,7 @@ SCREENS.notes = () => {
 
 /* ================= MORE ================= */
 SCREENS.more = () => {
-  const tiles = [['meetings', 'Встречи', 'users'], ['recordings', 'Записи', 'rec'], ['contacts', 'Контакты', 'user'], ['docs', 'Документы', 'folder'], ['fav', 'Избранное', 'star'], ['search', 'Поиск и AI', 'search'], ['card', 'Моя визитка', 'qr'], ['pdf', 'PDF-выгрузка', 'pdf'], ['slot', 'Свободное окно', 'clock'], ['voice', 'Голос', 'mic'], ['settings', 'Настройки', 'settings']];
+  const tiles = [['drive', 'За рулём', 'play'], ['help', 'Инструкция', 'note'], ['meetings', 'Встречи', 'users'], ['recordings', 'Записи', 'rec'], ['contacts', 'Контакты', 'user'], ['docs', 'Документы', 'folder'], ['fav', 'Избранное', 'star'], ['search', 'Поиск и AI', 'search'], ['card', 'Моя визитка', 'qr'], ['pdf', 'PDF-выгрузка', 'pdf'], ['slot', 'Свободное окно', 'clock'], ['voice', 'Голос', 'mic'], ['settings', 'Настройки', 'settings']];
   const act = { slot: 'openSlotFinder()', voice: 'openVoice()', pdf: "openPdfExport('today')" };
   const b = `<div class="tiles">${tiles.map(([k, l, i]) => `<button class="tile" onclick="${act[k] || `go('${k}')`}"><span class="ti">${ic(i, 22)}</span>${t(l)}</button>`).join('')}</div>
     <div style="text-align:center;margin-top:30px">${logo(56)}<div style="font-weight:800;font-size:20px;margin-top:10px">MARKUS-A</div><div class="muted" style="font-size:13px">${t('Больше, чем просто календарь.')}<br>${t('Думай. Говори. Действуй.')}</div></div>`;
@@ -235,23 +240,31 @@ SCREENS.meeting = () => {
     <div class="kv">${ic('calendar', 16)}${esc(m.date ? D.long(m.date) : t('Без даты'))}${m.start ? ' · ' + esc(timeLabel(m)) : ''}</div>
     ${m.place ? `<div class="kv">${ic('pin', 16)}${esc(m.place)}</div>` : ''}
     <div class="pills"><span class="cat" style="--t:${c.color}">${esc(catName(c))}</span>${m.priority !== 'normal' ? `<span class="tag" style="--t:${PRIO[m.priority].c}">${t(PRIO[m.priority].l)}</span>` : ''}${m.autoRecord ? `<span class="tag red">● ${t('Автозапись')}</span>` : ''}${m.status === 'done' ? `<span class="tag grn">${t('Завершена')}</span>` : ''}</div>`;
-  if (m.location) b += `<div class="card"><div class="h4" style="margin-top:0">${t('Локация')}</div><div class="kv" style="word-break:break-all">${ic('pin', 16)}<a href="${esc(m.location)}" target="_blank" rel="noopener">${esc(m.location.length > 60 ? m.location.slice(0, 60) + '…' : m.location)}</a></div>
-    <div class="btns"><a class="btn ghost" href="${esc(m.location)}" target="_blank" rel="noopener">${ic('pin', 16)} ${t('Открыть карту')}</a><button class="btn ghost" onclick="sendInvite('${m.id}')">${ic('send', 16)} ${t('Отправить партнёру')}</button></div></div>`;
+  if (m.needsTime && !m.start && m.date) b += `<div class="banner" style="color:var(--ora)" onclick="askMeetingTime('${m.id}')">${ic('clock')}<div><b>${t('Время встречи не указано')}</b><span>${t('Нажмите, чтобы указать время и включить автозапись')}</span></div>${ic('right')}</div>`;
+  if (recBlocked === m.id && !recOn && !m.recording) b += `<div class="banner" style="color:var(--red)" onclick="recBlocked=null;Rec.start('${m.id}')">${ic('mic')}<div><b>${t('Автозапись не запустилась')}</b><span>${t('Браузер не дал доступ к микрофону. Нажмите здесь, чтобы начать, и выберите «Разрешить всегда».')}</span></div></div>`;
+  if ((m.locations || []).length) b += `<div class="card"><div class="h4" style="margin-top:0">${t('Локации')} (${m.locations.length})</div>${placesBlock(m)}</div>`;
   b += `<div class="card"><div class="h4" style="margin-top:0;display:flex">${t('Участники')} (${cs.length + extra.length + 1})<span style="flex:1"></span><button class="link" onclick="meetAddPerson('${m.id}')">+ ${t('Добавить')}</button></div>
     ${cs.map(x => `<div class="person" onclick="openContact('${x.id}')" style="cursor:pointer"><span class="pav">${esc(x.title[0].toUpperCase())}</span><div style="flex:1;min-width:0"><b style="font-size:14px">${esc(x.title)}</b><div class="muted" style="font-size:12px">${esc([x.company, x.phone].filter(Boolean).join(' · '))}</div></div>${contactLinks(x).filter(l => l.i !== 'mail').map(l => `<a class="xbtn" href="${esc(l.u)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" aria-label="${esc(l.l)}">${ic(l.i, 16)}</a>`).join('')}</div>`).join('')}
     ${extra.map(n => `<div class="person"><span class="pav" style="background:#94a3b8">${esc(n.trim()[0] || '?').toUpperCase()}</span><div><b style="font-size:14px">${esc(n)}</b><div class="muted" style="font-size:12px">${t('нет в контактах')}</div></div></div>`).join('')}
     <div class="person"><span class="pav" style="background:#94a3b8">${esc((S.set.name || 'Я')[0].toUpperCase())}</span><div><b style="font-size:14px">${t('Вы')}</b><div class="muted" style="font-size:12px">${t('Организатор')}</div></div></div>
     <div class="btns" style="margin-top:8px"><button class="btn ghost" onclick="sendInvite('${m.id}')">${ic('send', 16)} ${t('Пригласить')}</button><button class="btn ghost" onclick="shareCardImage()">${ic('qr', 16)} ${t('Моя визитка')}</button></div></div>`;
-  b += `<div class="card"><div class="h4" style="margin-top:0">${t('Документы')} (${(m.files || []).length})</div>${(m.files || []).length ? attList(m.files, m.id, false) : `<div class="hint">${t('Прикрепите договор, презентацию, реквизиты — всё будет под рукой на встрече')}</div>`}
+  b += `<div class="card"><div class="h4" style="margin-top:0">${t('Материалы к встрече')} (${(m.files || []).length + (m.links || []).length})</div>${(m.files || []).length ? attList(m.files, m.id, false) : `<div class="hint">${t('Прикрепите договор, презентацию, реквизиты — всё будет под рукой на встрече')}</div>`}
+    ${linksBlock(m)}
     <label class="att-add" style="margin-top:8px">${ic('clip', 16)} ${t('Добавить файлы')}<input type="file" multiple hidden onchange="meetAddFiles('${m.id}',this)"></label></div>`;
   if (m.desc) b += `<div class="card"><div class="h4" style="margin-top:0">${t('Заметки')}</div><div class="pre">${linkify(m.desc)}</div></div>`;
   if ((m.subtasks || []).length) b += `<div class="card"><div class="h4" style="margin-top:0">${t('Подзадачи')} · ${progress(m)}%</div>${m.subtasks.map(s => `<div class="sub ${s.done ? 'done' : ''}"><button class="chk sq ${s.done ? 'on' : ''}" onclick="subToggle('${m.id}','${s.id}')">${s.done ? ic('checkmark', 12) : ''}</button><span class="sub-b"><span class="sub-t">${esc(s.text)}</span><span class="sub-m">${subMeta(m, s)}</span></span></div>`).join('')}</div>`;
-  if (recOn) b += `<button class="btn pri full" onclick="showRec()">${ic('rec', 18)} ${t('Идёт запись — открыть')}</button>`;
-  else if (!m.recording) b += `<button class="btn pri full" onclick="Rec.start('${m.id}')">${ic('mic', 18)} ${t('Начать запись встречи')}</button>`;
+  if (recOn) {
+    const ra = Rec.active;
+    b += `<div class="card rec-card ${ra.discreet ? 'quiet' : ''}"><div style="display:flex;align-items:center;gap:10px"><i class="rec-mini ${ra.pauseAt ? 'paused' : ''}"></i><b id="m_rec_t" style="font-variant-numeric:tabular-nums">${fmtDur(Rec.elapsed())}</b><span class="muted" style="font-size:12px;flex:1">${t('до {t}', { t: new Date(ra.stopAt).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) })}</span></div>
+      <div class="btns" style="margin-top:8px"><button class="btn ghost" onclick="Rec.stop()">${ic('rec', 16)} ${t('Остановить')}</button><button class="btn ghost" onclick="Rec.pause()">${ra.pauseAt ? ic('play', 16) : ic('pause', 16)}</button><button class="btn ghost" onclick="Rec.extend(30)">+30 ${t('мин')}</button>${ra.discreet ? '' : `<button class="btn ghost" onclick="showRec()">${ic('mic', 16)}</button>`}</div></div>`;
+  }
+  else if (!m.recording) b += `<button class="btn pri full" onclick="Rec.start('${m.id}')">${ic('mic', 18)} ${t('Начать запись встречи')}</button>${m.autoRecord && m.start && m.date >= D.today() ? `<div class="hint" style="text-align:center">${t('Автозапись включена: начнётся в {t}', { t: D.addMin(m.start, -(+S.set.recPre || 0)) })}</div>` : ''}`;
   if (m.recording) {
     b += `<div class="card" style="margin-top:10px"><div class="h4" style="margin-top:0">${t('Запись')} · ${fmtDur(m.recording.duration || 0)} · ${mb(m.recording.size)}</div><div id="m_audio"><div class="hint">${t('Загрузка…')}</div></div>
       <div class="btns" style="margin-top:8px"><button class="btn ghost" onclick="shareRec('${m.id}')">${ic('share', 16)} ${t('Поделиться')}</button><button class="btn ghost" onclick="saveRec('${m.id}')">${ic('download', 16)} ${t('В телефон')}</button></div>
-      <button class="btn ${m.transcript ? 'ghost' : 'pri'} full" style="margin-top:8px" onclick="processMeeting('${m.id}')">${ic('ai', 16)} ${m.transcript ? t('Обработать заново') : t('Обработать AI')}</button>
+      ${Processing.has(m.id) ? `<div class="ai-box" style="margin-top:8px">${t('AI готовит итоги… Можно пользоваться приложением.')}</div>` : `<button class="btn ${m.transcript ? 'ghost' : 'pri'} full" style="margin-top:8px" onclick="processMeeting('${m.id}')">${ic('ai', 16)} ${m.transcript ? t('Обработать заново') : t('Обработать AI')}</button>`}
+      ${m.aiError && !m.summary ? `<div class="hint warn">${esc(m.aiError)}</div>` : ''}
+      ${m.summary ? `<button class="btn ghost full" style="margin-top:8px" onclick="speakMeeting('${m.id}')">${ic('play', 16)} ${t('Прослушать итоги')}</button>` : ''}
       <button class="link" style="margin-top:10px" onclick="meetDelRec('${m.id}')">${t('Удалить запись')}</button></div>`;
   }
   if (m.summary || m.transcript) {
@@ -263,6 +276,7 @@ SCREENS.meeting = () => {
   return {
     top: titleTop(t('Встреча'), { extra: menu }), body: b,
     after: async () => {
+      loadThumbs($('#screen'));
       const box = $('#m_audio'); if (!box || !m.recording) return;
       const blob = await getFileBlob({ id: m.recording.fileId, cloud: m.recording.cloud });
       box.innerHTML = blob ? `<audio controls style="width:100%" src="${URL.createObjectURL(blob)}"></audio>` : `<div class="hint warn">${t('Аудио есть только на другом устройстве')}</div>`;
@@ -277,7 +291,7 @@ function meetTab(m) {
   if (S.meetTab === 'tasks') {
     const p = m.proposed || [];
     if (!p.length) return `<div class="hint">${t('AI не нашёл поручений в этой встрече')}</div>`;
-    return p.map((x, i) => `<div class="sub" style="align-items:flex-start"><span style="flex:1"><b style="font-size:14px">${esc(x.title)}</b><br><span class="muted" style="font-size:12px">${esc(x.date ? D.human(x.date) : t('без даты'))}${x.start ? ', ' + x.start : ''}${x.dueTime ? ', ' + t('до') + ' ' + x.dueTime : ''}${x.who ? ' · ' + esc(x.who) : ''}</span></span>
+    return p.map((x, i) => `<div class="sub" style="align-items:flex-start"><span style="flex:1"><b style="font-size:14px">${x.type === 'meeting' ? '👥 ' : x.type === 'control' ? '👁 ' : ''}${esc(x.title)}</b><br><span class="muted" style="font-size:12px">${esc(x.date ? D.human(x.date) : t('без даты'))}${x.start ? ', ' + x.start : ''}${x.dueTime ? ', ' + t('до') + ' ' + x.dueTime : ''}${x.who ? ' · ' + esc(x.who) : ''}</span></span>
       ${x.state === 'created' ? `<span class="tag grn">${t('создана')}</span>` : x.state === 'skipped' ? `<span class="tag">${t('пропущена')}</span>` : `<button class="rs-btn" onclick="createProposed('${m.id}',${i})">${t('Создать')}</button>`}</div>`).join('')
       + (p.some(x => x.state === 'new') ? `<button class="btn pri full" style="margin-top:10px" onclick="reviewProposed('${m.id}',true)">${t('Создать все')}</button>` : '');
   }
@@ -290,11 +304,13 @@ async function meetDelRec(id) {
   const m = getItem(id); if (!(await confirmDel(t('Удалить запись встречи?')))) return;
   await DB.del('files', m.recording.fileId); m.recording = null; await saveItem(m); toast(t('Запись удалена'));
 }
-async function meetToTelegram(id) {
+async function meetToTelegram(id, silent) {
   const m = getItem(id), s = m.summary || {};
-  const L = (ttl, a) => a && a.length ? `\n<b>${ttl}</b>\n` + a.map(x => '• ' + (typeof x === 'string' ? x : `${x.who ? x.who + ': ' : ''}${x.what}${x.due ? ' (' + x.due + ')' : ''}`)).join('\n') : '';
-  const tx = `📋 <b>${t('Итоги встречи')}: ${m.title}</b>\n${m.date ? D.human(m.date) : ''} ${timeLabel(m)}` + L(t('Кратко'), s.short) + L(t('Решения'), s.decisions) + L(t('Обязательства'), s.commitments) + L(t('Следующие шаги'), s.next);
-  try { await Cloud.sendTelegram(tx.replace(/&(?!lt;|gt;|amp;)/g, '&amp;')); toast(t('Отправлено в Telegram ✓')); } catch (e) { toast(e.message, 4000); }
+  const h = x => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const L = (ttl, a) => a && a.length ? `\n\n<b>${h(ttl)}</b>\n` + a.map(x => '• ' + h(typeof x === 'string' ? x : `${x.who ? x.who + ': ' : ''}${x.what || ''}${x.due ? ' (' + x.due + ')' : ''}`)).join('\n') : '';
+  const made = (m.proposed || []).filter(x => x.state === 'created').map(x => { const it = getItem(x.itemId); return it ? (it.kind === 'meeting' ? '👥 ' : '☐ ') + it.title + ' — ' + whenLabel(it) : null; }).filter(Boolean);
+  const tx = `📋 <b>${h(t('Итоги встречи'))}: ${h(m.title)}</b>\n${h(m.date ? D.human(m.date) : '')} ${h(timeLabel(m))}` + L(t('Кратко'), s.short) + L(t('Решения'), s.decisions) + L(t('Обязательства'), s.commitments) + L(t('Сроки'), s.deadlines) + L(t('Следующие шаги'), s.next) + L(t('Добавлено в планы'), made);
+  try { await Cloud.sendTelegram(tx.slice(0, 4000)); if (!silent) toast(t('Отправлено в Telegram ✓')); } catch (e) { if (!silent) toast(e.message, 4000); }
 }
 
 /* ================= RECORDINGS ================= */
@@ -413,7 +429,8 @@ SCREENS.settings = () => {
   let b = `<div class="set-card"><label class="lbl">${ic('globe', 14)} ${t('Язык / Language / Til')}</label>
     <select class="inp" onchange="setLang(this.value)">${LANGS.map(l => `<option value="${l.c}" ${st.lang === l.c ? 'selected' : ''}>${l.n}</option>`).join('')}<optgroup label="${esc(t('Другие (перевод через AI)'))}">${EXTRA_LANGS.map(l => `<option value="${l.c}" ${st.lang === l.c ? 'selected' : ''}>${l.n}</option>`).join('')}</optgroup></select>
     <label class="lbl">${t('Как к вам обращаться')}</label><input class="inp" value="${esc(st.name)}" placeholder="${esc(t('Имя'))}" onchange="setVal('name',this.value.trim())">
-    <label class="lbl">${t('Тема')}</label><div class="seg"><button class="${st.theme === 'light' ? 'on' : ''}" onclick="setVal('theme','light');applyTheme();render()">${t('Светлая')}</button><button class="${st.theme === 'dark' ? 'on' : ''}" onclick="setVal('theme','dark');applyTheme();render()">${t('Тёмная')}</button></div></div>`;
+    <label class="lbl">${t('Тема')}</label><div class="themes">${THEMES.map(([k, l, c1, c2]) => `<button class="theme-b ${st.theme === k ? 'on' : ''}" onclick="setVal('theme','${k}');applyTheme();render()"><i style="background:linear-gradient(135deg,${c1} 50%,${c2} 50%)"></i>${t(l)}</button>`).join('')}</div>
+    <div class="btns"><button class="btn ghost" onclick="go('help')">${ic('note', 16)} ${t('Инструкция и помощник')}</button></div></div>`;
   b += sec(t('Главный экран')) + `<div class="set-card"><label class="lbl">${t('Сортировка задач на сегодня')}</label><div class="seg"><button class="${st.homeSort === 'time' ? 'on' : ''}" onclick="setVal('homeSort','time');render()">${t('По времени')}</button><button class="${st.homeSort === 'prio' ? 'on' : ''}" onclick="setVal('homeSort','prio');render()">${t('По важности')}</button></div>
     <label class="lbl">${t('Сколько задач показывать до «Показать все»')}</label><select class="inp" onchange="setVal('homeLimit',+this.value)">${[3, 5, 6, 8, 10, 15].map(n => `<option ${st.homeLimit === n ? 'selected' : ''}>${n}</option>`).join('')}</select><div style="height:12px"></div></div>`;
   b += sec(t('Напоминания')) + `<div class="set-card">
@@ -423,9 +440,19 @@ SCREENS.settings = () => {
     <div class="g2"><div><label class="lbl">${t('Рабочий день с')}</label>${tInp('workStart')}</div><div><label class="lbl">${t('до')}</label>${tInp('workEnd')}</div></div>
     <label class="lbl">${t('Длительность задачи по умолчанию')}</label><select class="inp" onchange="setVal('defaultDur',+this.value)">${[15, 30, 45, 60, 90, 120].map(m => `<option value="${m}" ${st.defaultDur === m ? 'selected' : ''}>${durLabel(m)}</option>`).join('')}</select>
     <div class="sw-row"><div><b>${t('Уведомления на этом устройстве')}</b><span>${'Notification' in window ? (Notification.permission === 'granted' ? t('Разрешены') : Notification.permission === 'denied' ? t('Запрещены — включите в настройках браузера') : t('Не включены')) : t('Не поддерживаются')}</span></div>${'Notification' in window && Notification.permission === 'default' ? `<button class="chip-btn" onclick="askNotif()">${t('Включить')}</button>` : ''}</div></div>`;
+  b += sec(t('Запись встреч')) + `<div class="set-card">
+    <div class="sw-row"><div><b>${t('Автозапись всех новых встреч')}</b><span>${t('Включается в каждой новой встрече (можно выключить в конкретной встрече)')}</span></div><button class="sw ${st.autoRecDefault ? 'on' : ''}" onclick="setVal('autoRecDefault',!S.set.autoRecDefault);render()"></button></div>
+    <div class="g2"><div><label class="lbl">${t('Начинать до встречи за')}</label><select class="inp" onchange="setVal('recPre',+this.value);recomputeAll()">${[0, 1, 2, 3, 5, 10].map(n => `<option value="${n}" ${+st.recPre === n ? 'selected' : ''}>${n} ${t('мин')}</option>`).join('')}</select></div>
+    <div><label class="lbl">${t('Писать после конца ещё')}</label><select class="inp" onchange="setVal('recPost',+this.value)">${[0, 10, 15, 30, 45, 60, 90].map(n => `<option value="${n}" ${+st.recPost === n ? 'selected' : ''}>${n} ${t('мин')}</option>`).join('')}</select></div></div>
+    <label class="lbl">${t('Экстренная запись — не дольше')}</label><select class="inp" onchange="setVal('recMaxMin',+this.value)">${[60, 120, 180, 240, 360].map(n => `<option value="${n}" ${+st.recMaxMin === n ? 'selected' : ''}>${durLabel(n)}</option>`).join('')}</select>
+    <div class="sw-row"><div><b>${t('Незаметная запись')}</b><span>${t('Во время записи на экране нет большого окна записи — только маленькая точка в углу. Значок микрофона Android в строке состояния скрыть нельзя.')}</span></div><button class="sw ${st.recDiscreet ? 'on' : ''}" onclick="setVal('recDiscreet',!S.set.recDiscreet);render()"></button></div>
+    <div class="sw-row"><div><b>${t('AI-итоги сразу после записи')}</b><span>${t('Стенограмма, итоги, задачи и встречи по датам — без вопросов')}</span></div><button class="sw ${st.autoAI ? 'on' : ''}" onclick="setVal('autoAI',!S.set.autoAI);render()"></button></div>
+    <div class="sw-row"><div><b>${t('Присылать итоги в Telegram')}</b><span>${t('Если Telegram подключён')}</span></div><button class="sw ${st.sendSummaryTg ? 'on' : ''}" onclick="setVal('sendSummaryTg',!S.set.sendSummaryTg);render()"></button></div>
+    <div class="hint">${t('Чтобы автозапись не спрашивала разрешение: в Chrome нажмите значок слева от адреса → «Разрешения» → Микрофон → «Разрешить».')}</div></div>`;
   b += sec(t('AI-помощник')) + `<div class="set-card"><label class="lbl">${t('Ключ Google Gemini (бесплатный)')}</label><input class="inp" type="password" value="${esc(st.aiKey)}" placeholder="AIza… / AQ.…" onchange="setVal('aiKey',this.value.trim());Cloud.user&&Cloud.saveProfile({ai_key:this.value.trim()||null});render()">
     <div class="hint">${t('Получить: aistudio.google.com → Get API key.')} ${st.aiKey ? `<span class="ok">${t('Ключ сохранён')}</span>` : ''}</div>
     <label class="lbl">${t('Модель')}</label><input class="inp" value="${esc(st.aiModel)}" onchange="setVal('aiModel',this.value.trim()||'gemini-2.5-flash')">
+    <div class="hint">${t('Если Google отключит эту модель или закончится её бесплатный лимит, MARKUS-A сам переключится на другую доступную модель Gemini.')}${AI.lastModel ? ' ' + t('Сейчас работает: {m}', { m: esc(AI.lastModel) }) : ''}</div>
     <div class="btns"><button class="btn ghost" onclick="testAI()">${t('Проверить AI')}</button></div>
     <label class="lbl">${t('Задачи из встреч')}</label><div class="seg"><button class="${st.autoTasks === 'confirm' ? 'on' : ''}" onclick="setVal('autoTasks','confirm');render()">${t('С подтверждением')}</button><button class="${st.autoTasks === 'auto' ? 'on' : ''}" onclick="setVal('autoTasks','auto');render()">${t('Автоматически')}</button></div>
     <div class="sw-row"><div><b>${t('Отвечать голосом')}</b><span>${t('MARKUS-A озвучивает ответы на голосовые команды')}</span></div><button class="sw ${st.voiceReply ? 'on' : ''}" onclick="setVal('voiceReply',!S.set.voiceReply);render()"></button></div></div>`;
@@ -448,10 +475,14 @@ SCREENS.settings = () => {
   else if (p && p.tg_chat_id) b += `<div class="sw-row"><div><b><span class="ok">${t('Подключён')}</span></b><span>${t('Напоминания и итоги приходят в Telegram')}</span></div></div><div class="btns"><button class="btn ghost" onclick="Cloud.sendTelegram('✅ ${esc(t('Проверка связи MARKUS-A'))}').then(()=>toast(t('Отправлено в Telegram ✓'))).catch(e=>toast(e.message,6000))">${t('Тест')}</button><button class="btn ghost" onclick="Cloud.unlinkTelegram().then(render)">${t('Отключить')}</button></div>`;
   else b += `<div class="hint" style="margin-top:12px">${t('Бот будет присылать напоминания и итоги встреч, а вы сможете писать ему: «Завтра в 10 встреча с Алишером на час».')}</div><div class="btns"><button class="btn pri" onclick="doLinkTg()">${t('Подключить Telegram')}</button><button class="btn ghost" onclick="Cloud.loadProfile().then(render)">${t('Проверить')}</button></div>`;
   b += '</div>';
+  b += sec(t('Файлы и память телефона')) + `<div class="set-card"><div class="hint" style="margin-top:12px">${t('Файлы, фото и записи хранятся в памяти приложения на телефоне. Если вы вошли в облако — копия уходит в облако Supabase (бесплатно 1 ГБ, файл до 50 МБ) и открывается на любом устройстве.')}</div>
+    <div class="hint" id="st_info"></div>
+    <div class="sw-row"><div><b>${t('Хранить файлы только в облаке')}</b><span>${t('После отправки в облако файл удаляется с телефона и скачивается снова, когда вы его открываете (нужен интернет)')}</span></div><button class="sw ${st.cloudOnly ? 'on' : ''}" onclick="${u ? "setVal('cloudOnly',!S.set.cloudOnly);render()" : "toast(t('Сначала войдите в облако — иначе файлы потеряются'),4000)"}"></button></div>
+    <div class="btns"><button class="btn ghost" onclick="freePhoneMemory()">${t('Освободить память телефона')}</button></div></div>`;
   b += sec(t('Данные')) + `<div class="set-card"><div class="hint" style="margin-top:12px">${t('Резервная копия задач, встреч, контактов и заметок (без файлов).')}</div><div class="btns"><button class="btn ghost" onclick="exportBackup()">${ic('download', 16)} ${t('Скачать копию')}</button><label class="btn ghost">${t('Загрузить копию')}<input type="file" accept=".json,application/json" hidden onchange="importBackup(this.files[0])"></label></div>
     ${window._installPrompt ? `<div class="btns"><button class="btn pri" onclick="installApp()">${t('Установить приложение')}</button></div>` : ''}</div>`;
-  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 2.0</div>`;
-  return { top: titleTop(t('Настройки')), body: b };
+  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 3.0</div>`;
+  return { top: titleTop(t('Настройки')), body: b, after: async () => { const i = await storageInfo(); const el = $('#st_info'); if (el) el.textContent = t('Занято на телефоне: {a} · файлов: {n}, из них в облаке: {c}', { a: mb(i.used), n: i.n, c: i.cloud }); } };
 };
 async function testAI() { try { toast(t('Проверяю…')); const r = await AI.call([{ text: 'Reply with one word in ' + langName() + ': works' }]); toast(t('AI отвечает: {r} ✓', { r: r.slice(0, 40) }), 3000); } catch (e) { toast(e.message, 5000); } }
 async function doAuth(mode) {
@@ -496,3 +527,12 @@ async function importBackup(file) {
   } catch (e) { toast(t('Файл не подходит')); }
 }
 async function installApp() { const p = window._installPrompt; if (!p) return; p.prompt(); await p.userChoice; window._installPrompt = null; render(); }
+
+/* keep the screen on until a meeting with auto-record starts (so the recording can start by itself) */
+let awakeRec = null;
+async function keepAwakeForRec() {
+  if (awakeRec) { try { awakeRec.release(); } catch (e) { } awakeRec = null; toast(t('Экран снова может гаснуть')); render(); return; }
+  try { if (navigator.wakeLock) { awakeRec = await navigator.wakeLock.request('screen'); awakeRec.addEventListener('release', () => { awakeRec = null; }); } } catch (e) { }
+  toast(awakeRec ? t('Экран не погаснет — запись начнётся сама.') : t('Этот браузер не умеет держать экран включённым'), 4000);
+  render();
+}

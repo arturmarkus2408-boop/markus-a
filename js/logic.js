@@ -77,6 +77,12 @@ function normalizeItem(it) {
   if (!isTaskKind(it)) return;
   it.subtasks = (it.subtasks || []).map(s => Object.assign({ id: uid(), text: '', done: false, due: null, time: null, after: null, afterDays: null }, s));
   if (it.status === 'todo' && it.subtasks.some(s => s.done) && it.subtasks.some(s => !s.done)) it.status = 'progress';
+  if (!Array.isArray(it.locations)) it.locations = [];
+  if (it.location && !it.locations.length) it.locations.push(newPlace({ url: it.location }));
+  it.locations = it.locations.map(l => Object.assign(newPlace(), l, { photos: l.photos || [] }));
+  it.location = (it.locations[0] && placeUrl(it.locations[0])) || '';
+  if (!Array.isArray(it.links)) it.links = [];
+  if (it.start) it.needsTime = false;
 }
 
 /* ---------- task state ---------- */
@@ -145,6 +151,12 @@ function computeReminders(it) {
     if (it.nag) nagTimes(s.due, s.time).forEach(d => add(d, label));
   });
   if (open && it.customRemind) add(new Date(it.customRemind));
+  // meetings: auto-record prompt a couple of minutes before start (also sent to Telegram with a «start recording» button)
+  if (open && it.kind === 'meeting' && it.autoRecord && !it.recording && it.date && it.start)
+    add(new Date(D.dt(it.date, it.start).getTime() - (+st.recPre || 0) * 60000), '🎙 ' + t('Автозапись встречи') + ' ' + it.start);
+  // meeting agreed without a time: morning of that day ask to set the time and turn on auto-record
+  if (open && it.kind === 'meeting' && it.date && !it.start && it.needsTime)
+    add(D.dt(it.date, '09:00'), '⏰ ' + t('Уточните время встречи и включите автозапись'));
   const min = Date.now() - 86400000;
   it.remindTimes = Array.from(new Set(out)).filter(x => Date.parse(x) > min).sort().slice(0, 150);
   it.remindLabels = {}; it.remindTimes.forEach(x => { if (lab[x]) it.remindLabels[x] = lab[x]; });

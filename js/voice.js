@@ -12,9 +12,9 @@ function dictateInto(id, btn, multiline) {
   dict = { rec, btn }; btn.classList.add('on');
   rec.onresult = e => {
     for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) {
-      const t = e.results[i][0].transcript.trim(); if (!t) continue;
+      const tx = e.results[i][0].transcript.trim(); if (!tx) continue;
       const v = el.value;
-      el.value = v + (v && !/\s$/.test(v) ? (multiline ? ' ' : ' ') : '') + (v ? t : t[0].toUpperCase() + t.slice(1));
+      el.value = v + (v && !/\s$/.test(v) ? (multiline ? ' ' : ' ') : '') + (v ? tx : tx[0].toUpperCase() + tx.slice(1));
     }
   };
   rec.onerror = e => { if (e.error === 'not-allowed') toast(t('Разрешите доступ к микрофону')); stopDictation(); };
@@ -49,15 +49,15 @@ function voiceListen() {
   $('#vo_mic').classList.add('on'); $('#vo_h').textContent = t('Говорите…');
   rec.onresult = e => {
     let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) { const t = e.results[i][0].transcript; if (e.results[i].isFinal) V.final += t; else interim += t; }
+    for (let i = e.resultIndex; i < e.results.length; i++) { const tx = e.results[i][0].transcript; if (e.results[i].isFinal) V.final += tx; else interim += tx; }
     $('#vo_heard').textContent = (V.final + ' ' + interim).trim();
   };
   rec.onerror = e => { if (e.error === 'not-allowed') { toast(t('Разрешите доступ к микрофону')); } if (V) { $('#vo_h').textContent = t('Не расслышал — повторите или напишите'); } };
   rec.onend = () => {
     if (!V || V.cancel) return;
     $('#vo_mic').classList.remove('on');
-    const t = (V.final || '').trim();
-    if (t) processVoiceText(t); else if (!V.busy) $('#vo_h').textContent = t('Нажмите на микрофон и говорите');
+    const heard = (V.final || '').trim();
+    if (heard) processVoiceText(heard); else if (!V.busy) $('#vo_h').textContent = t('Нажмите на микрофон и говорите');
   };
   try { rec.start(); } catch (e) { }
 }
@@ -66,14 +66,14 @@ function voiceMicToggle() {
   if (!SR) { $('#vo_text').focus(); return; }
   if ($('#vo_mic').classList.contains('on')) { try { V.rec.stop(); } catch (e) { } } else voiceListen();
 }
-function voiceSubmit() { const t = $('#vo_text').value.trim(); if (!t || !V) return; if (V.rec) { V.cancel = true; try { V.rec.abort(); } catch (e) { } V.cancel = false; } $('#vo_heard').textContent = t; processVoiceText(t); }
-async function processVoiceText(t) {
+function voiceSubmit() { const typed = $('#vo_text').value.trim(); if (!typed || !V) return; if (V.rec) { V.cancel = true; try { V.rec.abort(); } catch (e) { } V.cancel = false; } $('#vo_heard').textContent = typed; processVoiceText(typed); }
+async function processVoiceText(said) {
   if (!V || V.busy) return;
   V.busy = true;
   if (V.mode === 'note') {
     closeVoice();
-    let txt = t;
-    if (AI.ready()) { try { txt = await AI.improveText(t); } catch (e) { } }
+    let txt = said;
+    if (AI.ready()) { try { txt = await AI.improveText(said); } catch (e) { } }
     const n = newItem('note', { title: txt.split(/[.\n!?]/)[0].slice(0, 60), desc: txt, noteCat: S.noteCat === 'all' ? 'Идеи' : S.noteCat });
     await saveItem(n); toast(t('Заметка сохранена ✓')); openNoteEditor(n);
     return;
@@ -81,7 +81,7 @@ async function processVoiceText(t) {
   $('#vo_h').textContent = t('Распознаю…'); $('#vo_ex').hidden = true;
   const steps = $('#vo_steps'); steps.hidden = false;
   steps.innerHTML = `<b>${t('Распознаю…')}</b>${['Дата и время', 'Задача', 'Приоритет', 'Контакт'].map(s => `<div class="vo-step">${t(s)}<i class="spin"></i></div>`).join('')}`;
-  await handleCommand(t, { fromVoice: true });
+  await handleCommand(said, { fromVoice: true });
 }
 
 /* ================= command handling ================= */
@@ -199,7 +199,10 @@ async function slotFlow(p) {
   if (v) openEditor('task', { title: p.title || '', date: v.date, start: v.start, end: v.end });
 }
 
-/* ================= meeting recorder ================= */
+/* ================= meeting recorder =================
+   v3: starts by itself (auto-record) without questions, stops by itself at end + N minutes,
+   "discreet" mode shows no full-screen recorder (only a tiny dot), saves automatically and
+   hands the audio to AI for a summary. */
 const Rec = {
   active: null,
   pickMime() {
@@ -209,16 +212,27 @@ const Rec = {
     return c.find(m => { try { return MediaRecorder.isTypeSupported(m); } catch (e) { return false; } }) || '';
   },
   elapsed() { const a = Rec.active; if (!a) return 0; const now = a.pauseAt || Date.now(); return (now - a.started - a.pausedTotal) / 1000; },
-  async start(meetingId, auto) {
-    if (Rec.active) { showRec(); return true; }
-    if (!navigator.mediaDevices || !window.MediaRecorder) { toast(t('Запись не поддерживается этим браузером')); return false; }
+  /* when the recording should stop by itself (ms) */
+  stopAtFor(m, emergency) {
+    const cap = Date.now() + Math.max(10, +S.set.recMaxMin || 180) * 60000;
+    if (emergency || !m || !m.date || !m.start) return cap;
+    const end = D.dt(m.date, m.end || D.addMin(m.start, S.set.defaultDur || 60)).getTime() + (+S.set.recPost || 0) * 60000;
+    return Math.max(Date.now() + 5 * 60000, Math.min(end, cap + 6 * 3600000));
+  },
+  async start(meetingId, o = {}) {
+    if (typeof o === 'boolean') o = { auto: o };
+    if (Rec.active) { if (!Rec.active.discreet) showRec(); return true; }
+    if (!navigator.mediaDevices || !window.MediaRecorder) { if (!o.auto) toast(t('Запись не поддерживается этим браузером')); return false; }
     let stream;
     try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
-    catch (e) { if (!auto) toast(t('Нет доступа к микрофону. Разрешите его в настройках браузера.'), 4000); return false; }
+    catch (e) { if (!o.auto) toast(t('Нет доступа к микрофону. Разрешите его в настройках браузера.'), 4000); return false; }
     const mime = Rec.pickMime();
     const opts = { audioBitsPerSecond: 32000 }; if (mime) opts.mimeType = mime;
     let mr; try { mr = new MediaRecorder(stream, opts); } catch (e) { mr = new MediaRecorder(stream); }
-    const a = { meetingId, mr, stream, chunks: [], started: Date.now(), pausedTotal: 0, pauseAt: null, mime: mr.mimeType || mime || 'audio/webm', size: 0, endAsked: false };
+    const m = getItem(meetingId);
+    const a = { meetingId, mr, stream, chunks: [], started: Date.now(), pausedTotal: 0, pauseAt: null, mime: mr.mimeType || mime || 'audio/webm', size: 0,
+      discreet: o.discreet != null ? !!o.discreet : !!S.set.recDiscreet, auto: !!o.auto, emergency: !!(o.emergency || (m && m.emergency)) };
+    a.stopAt = Rec.stopAtFor(m, a.emergency);
     mr.ondataavailable = e => { if (e.data && e.data.size) { a.chunks.push(e.data); a.size += e.data.size; } };
     mr.start(5000);
     Rec.active = a;
@@ -227,28 +241,52 @@ const Rec = {
       localStorage.setItem('markus_recbuf', JSON.stringify({ meetingId, mime: a.mime, dur: Rec.elapsed() }));
     }, 15000);
     try { const ctx = new (window.AudioContext || window.webkitAudioContext)(); const src = ctx.createMediaStreamSource(stream); const an = ctx.createAnalyser(); an.fftSize = 256; src.connect(an); a.ctx = ctx; a.an = an; } catch (e) { }
-    try { if (navigator.wakeLock) a.wake = await navigator.wakeLock.request('screen'); } catch (e) { }
-    a.tick = setInterval(recTick, 500);
-    showRec();
-    if (S.route === 'meeting') render();
+    a.tick = setInterval(recTick, 1000);
+    if (m && m.status === 'todo') { m.status = 'progress'; saveItem(m, { render: false }); }
+    if (typeof awakeRec !== 'undefined' && awakeRec) { try { awakeRec.release(); } catch (e) { } awakeRec = null; }
+    if (a.discreet) { recDot(); try { navigator.vibrate && navigator.vibrate(60); } catch (e) { } }   // no visible sign — only a short vibration
+    else { try { if (navigator.wakeLock) a.wake = await navigator.wakeLock.request('screen'); } catch (e) { } showRec(); }
+    if (S.route === 'meeting' || S.route === 'home') render();
     return true;
   },
-  pause() { const a = Rec.active; if (!a) return; if (a.pauseAt) { a.pausedTotal += Date.now() - a.pauseAt; a.pauseAt = null; a.mr.resume(); } else { a.pauseAt = Date.now(); a.mr.pause(); } showRec(); },
-  async stop() {
-    const a = Rec.active; if (!a) return;
+  pause() { const a = Rec.active; if (!a) return; if (a.pauseAt) { a.pausedTotal += Date.now() - a.pauseAt; a.pauseAt = null; a.mr.resume(); } else { a.pauseAt = Date.now(); a.mr.pause(); } if (!a.discreet) showRec(); else render(); },
+  extend(min) { const a = Rec.active; if (!a) return; a.stopAt = Math.max(a.stopAt, Date.now()) + min * 60000; toast(t('Запись продлена до {t}', { t: new Date(a.stopAt).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) })); render(); },
+  async stop(o = {}) {
+    const a = Rec.active; if (!a || a.stopping) return; a.stopping = true;
     if (a.pauseAt) { a.pausedTotal += Date.now() - a.pauseAt; a.pauseAt = null; }
     const dur = Rec.elapsed();
-    await new Promise(r => { a.mr.onstop = r; try { a.mr.stop(); } catch (e) { r(); } });
+    await new Promise(r => { a.mr.onstop = r; try { a.mr.stop(); } catch (e) { r(); } setTimeout(r, 4000); });
     a.stream.getTracks().forEach(tr => tr.stop());
     clearInterval(a.tick); clearInterval(a.persist); cancelAnimationFrame(a.raf);
     try { a.ctx && a.ctx.close(); } catch (e) { }
     try { a.wake && a.wake.release(); } catch (e) { }
-    Rec.active = null; hideRec();
+    Rec.active = null; hideRec(); recDot();
     const blob = new Blob(a.chunks, { type: a.mime });
     localStorage.removeItem('markus_recbuf'); DB.del('files', 'recbuf').catch(() => { });
-    await afterRecording(a.meetingId, blob, a.mime, dur);
+    await afterRecording(a.meetingId, blob, a.mime, dur, { auto: !!o.auto, emergency: a.emergency });
   }
 };
+/* tiny, neutral dot in the corner while a discreet recording runs (tap → controls) */
+function recDot() {
+  let d = document.getElementById('recDot');
+  const a = Rec.active;
+  if (!a || !a.discreet) { if (d) d.remove(); return; }
+  if (!d) { d = document.createElement('button'); d.id = 'recDot'; d.className = 'rec-dot'; d.setAttribute('aria-label', t('Запись')); d.onclick = () => openRecControls(); document.body.appendChild(d); }
+  d.classList.toggle('paused', !!a.pauseAt);
+}
+function openRecControls() {
+  const a = Rec.active; if (!a) return;
+  const m = getItem(a.meetingId) || { title: t('Запись') };
+  const until = new Date(a.stopAt).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
+  openSheet(`<div class="dlg-t">${esc(m.title)}</div>
+    <div class="dlg-x">${t('Идёт запись')}: <b id="rc_t">${fmtDur(Rec.elapsed())}</b> · ${mb(a.size)}<br>${t('Остановится сама в {t}', { t: until })}</div>
+    <div class="dlg-b">
+      <button class="btn pri" onclick="closeSheet();Rec.stop()">${ic('rec', 18)} ${t('Остановить и сохранить')}</button>
+      <button class="btn ghost" onclick="closeSheet();Rec.pause()">${a.pauseAt ? ic('play', 18) + ' ' + t('Продолжить') : ic('pause', 18) + ' ' + t('Пауза')}</button>
+      <button class="btn ghost" onclick="closeSheet();Rec.extend(30)">+30 ${t('мин')}</button>
+      <button class="btn ghost" onclick="closeSheet();Rec.active.discreet=false;recDot();showRec()">${t('Показать экран записи')}</button>
+    </div>`, { cls: 'center' });
+}
 function showRec() {
   const a = Rec.active; if (!a) return;
   const m = getItem(a.meetingId) || { title: t('Запись'), participants: [] };
@@ -258,9 +296,10 @@ function showRec() {
       <div class="rec-time" id="r_time">${fmtDur(Rec.elapsed())}</div>
       <canvas class="rec-wave" id="r_wave" width="600" height="120"></canvas>
       <div class="rec-st"><i style="${a.pauseAt ? 'animation:none;background:#9ea3d6' : ''}"></i>${a.pauseAt ? t('Пауза') : t('Идёт запись…')}</div>
-      <div class="rec-meta" id="r_meta">${t('Участники')}: ${(m.participants || []).length + 1} · ${mb(a.size)}</div>
+      <div class="rec-meta" id="r_meta">${t('Остановится сама в {t}', { t: new Date(a.stopAt).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) })} · ${mb(a.size)}</div>
       <button class="btn rec-stop" onclick="Rec.stop()">${ic('rec', 18)} ${t('Остановить')}</button>
       <button class="btn dk-ghost" onclick="Rec.pause()">${a.pauseAt ? ic('play', 18) + ' ' + t('Продолжить') : ic('pause', 18) + ' ' + t('Пауза')}</button>
+      <button class="btn dk-ghost" onclick="Rec.active.discreet=true;hideRec();recDot()">${t('Скрыть (незаметная запись)')}</button>
       <div class="vo-box" style="margin-top:14px">${t('Не закрывайте приложение — запись идёт, пока оно открыто (можно свернуть кнопкой «назад» и работать в MARKUS-A). Готовая запись появится в разделе «Ещё → Записи»: оттуда её можно отправить в Telegram/WhatsApp или сохранить в телефон.')}</div>
     </div>`;
   drawWave();
@@ -268,21 +307,19 @@ function showRec() {
 function hideRec(minimize) {
   $('#recOv').hidden = true;
   const a = Rec.active;
-  if (a && minimize) { $('#recPill').hidden = false; recTick(); }
+  if (a && minimize && !a.discreet) { $('#recPill').hidden = false; recTick(); }
   else $('#recPill').hidden = true;
   if (a) cancelAnimationFrame(a.raf);
 }
 function recTick() {
   const a = Rec.active; if (!a) return;
   const el = $('#r_time'); if (el) el.textContent = fmtDur(Rec.elapsed());
+  const rc = $('#rc_t'); if (rc) rc.textContent = fmtDur(Rec.elapsed());
   const mm = $('#r_meta'); if (mm) mm.textContent = mm.textContent.replace(/·[^·]*$/, '· ' + mb(a.size));
+  const ms = $('#m_rec_t'); if (ms) ms.textContent = fmtDur(Rec.elapsed());
   const pill = $('#recPill'); if (!pill.hidden) pill.innerHTML = `<i></i> ${t('Запись')} ${fmtDur(Rec.elapsed())}`;
-  const m = getItem(a.meetingId);
-  if (m && m.date && m.end && !a.endAsked && Date.now() >= endAt(m).getTime()) {
-    a.endAsked = true;
-    notify(t('Время встречи вышло'), t('Остановить запись «{x}»?', { x: m.title }), { tag: 'rec-end', id: m.id });
-    dialog({ title: t('Время встречи вышло'), text: t('Остановить запись и сохранить?'), buttons: [{ l: t('Остановить'), v: 1, p: 1 }, { l: t('Продолжить запись'), v: 0 }] }).then(v => { if (v) Rec.stop(); });
-  }
+  // stops by itself: meeting end + N minutes (Settings → Запись), so a forgotten recorder never runs for hours
+  if (!a.pauseAt && Date.now() >= a.stopAt) Rec.stop({ auto: true });
 }
 function drawWave() {
   const a = Rec.active, cv = $('#r_wave'); if (!a || !cv || !a.an) return;
@@ -301,32 +338,30 @@ function drawWave() {
   };
   loop();
 }
+/* one tap: emergency recording (government office, unexpected talk…). Saves itself and makes an AI summary. */
 async function quickRecord() {
+  if (Rec.active) { if (Rec.active.discreet) openRecControls(); else showRec(); return; }
   const now = D.nowTime();
-  const m = newItem('meeting', { title: t('Запись') + ' ' + D.short(D.today()) + ' ' + now, date: D.today(), start: now, end: D.addMin(now, 60), reminders: [] });
+  const m = newItem('meeting', { title: t('Экстренная запись') + ' ' + D.short(D.today()) + ' ' + now, date: D.today(), start: now, end: D.addMin(now, 60), reminders: [], autoRecord: false, emergency: true, category: 'meet' });
   await saveItem(m, { render: false });
+  const ok = await Rec.start(m.id, { emergency: true });
+  if (!ok) { toast(t('Не удалось начать запись')); go('meeting', m.id); return; }
   go('meeting', m.id);
-  const ok = await Rec.start(m.id);
-  if (!ok) toast(t('Не удалось начать запись'));
 }
-async function afterRecording(meetingId, blob, mime, dur) {
+async function afterRecording(meetingId, blob, mime, dur, o = {}) {
   let m = getItem(meetingId);
   if (!m) { m = newItem('meeting', { title: t('Запись') + ' ' + D.short(D.today()), date: D.today() }); }
   if (!blob.size) { toast(t('Запись пустая')); return; }
   const fid = uid(); await DB.put('files', blob, fid);
-  const rec = { fileId: fid, mime, duration: dur, size: blob.size, created: new Date().toISOString(), fav: false, cloud: false };
-  const v = await dialog({
-    title: t('Встреча закончилась. Сохранить запись?'), text: esc(t('Длительность {d}, {s}.', { d: fmtDur(dur), s: mb(blob.size) })),
-    buttons: [{ l: t('Сохранить и обработать AI'), v: 'ai', p: 1 }, { l: t('Сохранить'), v: 'save' }, { l: t('Отправить (Telegram, WhatsApp…)'), v: 'share' }, { l: t('Сохранить в телефон'), v: 'dl' }, { l: t('Удалить запись'), v: 'del', d: 1 }]
-  });
-  if (v === 'del' && await confirmDel(t('Удалить запись без возможности восстановления?'))) { await DB.del('files', fid); toast(t('Запись удалена')); return; }
-  m.recording = rec;
-  if (m.status === 'todo' && m.date && m.date <= D.today()) m.status = 'done';
+  m.recording = { fileId: fid, mime, duration: dur, size: blob.size, created: new Date().toISOString(), fav: false, cloud: false };
+  if (m.emergency) m.end = D.nowTime() > m.start ? D.nowTime() : m.end;
+  if (m.status !== 'cancelled' && m.date && m.date <= D.today()) m.status = 'done';
   await saveItem(m);
-  if (S.route !== 'meeting' || S.meetingId !== m.id) go('meeting', m.id); else render();
-  if (v === 'dl') saveRec(m.id);
-  else if (v === 'share') shareRec(m.id);
-  if (v === 'ai') processMeeting(m.id);
+  // saved automatically — nothing to answer; everything else (share, save to phone, delete) is on the meeting screen
+  notify(t('Запись сохранена'), m.title + ' · ' + fmtDur(dur), { tag: 'recdone-' + m.id, id: m.id });
+  if (document.visibilityState === 'visible' && !o.auto) { if (S.route !== 'meeting' || S.meetingId !== m.id) go('meeting', m.id); else render(); }
+  else if (S.route === 'meeting' && S.meetingId === m.id) render();
+  if (S.set.autoAI && AI.ready()) { toast(t('Запись сохранена ✓ AI готовит итоги…'), 4000); processMeeting(m.id, { auto: true }); }
   else toast(t('Запись сохранена ✓ (Ещё → Записи)'), 3500);
 }
 async function recoverRecording() {
@@ -334,45 +369,78 @@ async function recoverRecording() {
   const blob = await DB.get('files', 'recbuf').catch(() => null);
   localStorage.removeItem('markus_recbuf');
   if (!blob || !blob.size) return;
-  const v = await dialog({ title: t('Найдена незавершённая запись'), text: esc(t('Приложение закрылось во время записи. Сохранено {d} ({s}). Восстановить?', { d: fmtDur(info.dur || 0), s: mb(blob.size) })), buttons: [{ l: t('Восстановить'), v: 1, p: 1 }, { l: t('Удалить'), v: 0, d: 1 }] });
+  // the app was closed during a recording: keep what was captured instead of asking
   await DB.del('files', 'recbuf').catch(() => { });
-  if (v) await afterRecording(info.meetingId, blob, info.mime, info.dur || 0);
+  toast(t('Восстановлена незавершённая запись ({d})', { d: fmtDur(info.dur || 0) }), 5000);
+  await afterRecording(info.meetingId, blob, info.mime, info.dur || 0, { auto: true });
 }
 
 /* ================= AI processing of meetings ================= */
-async function processMeeting(id) {
+const Processing = new Set();
+async function processMeeting(id, o = {}) {
   const m = getItem(id); if (!m || !m.recording) return;
   if (!AI.ready()) return toast(t('Добавьте ключ Gemini в Настройках → AI'), 4000);
-  const sh = openSheet(`<div class="dlg-t">${t('AI обрабатывает встречу')}</div><div class="dlg-x" id="pm_s">${t('Расшифровываю запись… Это может занять 1–3 минуты. Не закрывайте приложение.')}</div><div class="vo-step" style="color:var(--txt2)">${t('Стенограмма')}<i class="spin" id="pm_1"></i></div><div class="vo-step" style="color:var(--txt2)">${t('Анализ и задачи')}<i id="pm_2"></i></div>`, { cls: 'center' });
-  const entry = topSheet(); entry.locked = true;
+  if (Processing.has(id)) return toast(t('AI уже обрабатывает эту запись…'));
+  Processing.add(id);
+  let sh = null, entry = null;
+  if (!o.auto) {
+    sh = openSheet(`<div class="dlg-t">${t('AI обрабатывает встречу')}</div><div class="dlg-x" id="pm_s">${t('Расшифровываю запись… Это может занять 1–3 минуты. Не закрывайте приложение.')}</div><div class="vo-step" style="color:var(--txt2)">${t('Стенограмма')}<i class="spin" id="pm_1"></i></div><div class="vo-step" style="color:var(--txt2)">${t('Анализ и задачи')}<i id="pm_2"></i></div>`, { cls: 'center' });
+    entry = topSheet(); entry.locked = true;
+  }
+  const step = (txt) => { if (sh) { $('#pm_1', sh).className = 'ok'; $('#pm_2', sh).className = 'spin'; $('#pm_s', sh).textContent = txt; } };
   try {
     const blob = await getFileBlob({ id: m.recording.fileId, cloud: m.recording.cloud });
     if (!blob) throw new Error(t('Аудиофайл не найден на этом устройстве'));
-    m.transcript = await AI.transcribe(blob, m.recording.mime, m);
+    m.transcript = await AI.transcribe(blob, m.recording.mime, m, pct => sh && ($('#pm_s', sh).textContent = t('Загружаю запись для AI… {p}%', { p: pct })));
     await saveItem(m, { render: false });
-    $('#pm_1', sh).className = 'ok'; $('#pm_2', sh).className = 'spin'; $('#pm_s', sh).textContent = t('Анализирую: решения, обязательства, сроки, задачи…');
+    step(t('Анализирую: решения, обязательства, сроки, задачи…'));
     const a = await AI.analyzeMeeting(m);
     m.summary = a.summary || {};
-    m.proposed = (a.tasks || []).filter(t => t && t.title).map(t => Object.assign({}, t, { state: 'new' }));
+    const items = Array.isArray(a.items) ? a.items : (a.tasks || []);
+    m.proposed = items.filter(x => x && x.title).map(x => Object.assign({ type: 'task' }, x, { state: 'new' }));
     await saveItem(m);
-    entry.locked = false; closeSheet();
-    S.meetTab = 'short'; if (S.route === 'meeting') render();
-    toast(t('Готово ✓ Итоги встречи ниже'));
+    if (entry) { entry.locked = false; closeSheet(); }
+    S.meetTab = 'short'; if (S.route === 'meeting' && S.meetingId === id) render();
+    let created = { tasks: 0, meetings: 0 };
     if (m.proposed.length) {
-      if (S.set.autoTasks === 'auto') await reviewProposed(id, true, true);
-      else {
+      if (S.set.autoTasks === 'auto') created = await reviewProposed(id, true, true);
+      else if (!o.auto) {
         const v = await dialog({ title: t('Найдено новых задач: {n}. Создать?', { n: m.proposed.length }), text: m.proposed.map(x => '• ' + esc(x.title) + (x.date ? ' — ' + D.human(x.date) + (x.start || x.dueTime ? ', ' + (x.start || t('до {t}', { t: x.dueTime })) : '') : '')).join('<br>'), buttons: [{ l: t('Создать все'), v: 'all', p: 1 }, { l: t('Проверить по одной'), v: 'one' }, { l: t('Позже'), v: null }] });
-        if (v === 'all') await reviewProposed(id, true);
-        else if (v === 'one') await reviewProposed(id, false);
+        if (v === 'all') created = await reviewProposed(id, true);
+        else if (v === 'one') created = await reviewProposed(id, false);
       }
     }
+    const msg = t('Итоги готовы') + ': ' + m.title + (created.tasks || created.meetings ? ' · ' + t('задач: {a}, встреч: {b}', { a: created.tasks, b: created.meetings }) : '');
+    toast(msg, 5000);
+    notify(t('Итоги встречи готовы'), msg, { tag: 'sum-' + id, id });
+    if (S.set.sendSummaryTg && Cloud.user && Cloud.profile && Cloud.profile.tg_chat_id) meetToTelegram(id, true);
   } catch (e) {
-    entry.locked = false; closeSheet();
-    dialog({ title: t('Не получилось'), text: esc(e.message), buttons: [{ l: t('Понятно'), v: 1, p: 1 }] });
-  }
+    if (entry) { entry.locked = false; closeSheet(); }
+    m.aiError = e.message; saveItem(m, { render: false });
+    if (o.auto) { toast(t('AI не смог обработать запись: {e}', { e: e.message }), 6000); notify(t('AI не смог обработать запись'), e.message, { tag: 'sum-' + id, id }); }
+    else dialog({ title: t('Не получилось'), text: esc(e.message), buttons: [{ l: t('Понятно'), v: 1, p: 1 }] });
+  } finally { Processing.delete(id); }
 }
 function proposedToItem(x, m) {
-  const it = newItem('task', { title: x.title, date: x.date || null, start: x.start || null, end: x.end || null, priority: ['normal', 'high', 'critical'].includes(x.priority) ? x.priority : 'normal', desc: `${t('Из встречи')} «${m.title}»${m.date ? ' (' + D.human(m.date) + ')' : ''}${x.who ? '\n' + t('Исполнитель') + ': ' + x.who : ''}${x.dueTime ? '\n' + t('Срок') + ': ' + t('до {t}', { t: x.dueTime }) : ''}`, participants: m.participants || [], contactIds: m.contactIds || [], linked: [m.id] });
+  const from = `${t('Из встречи')} «${m.title}»${m.date ? ' (' + D.human(m.date) + ')' : ''}`;
+  const prio = ['normal', 'high', 'critical'].includes(x.priority) ? x.priority : 'normal';
+  const names = Array.isArray(x.participants) && x.participants.length ? x.participants : (m.participants || []);
+  const cids = Array.from(new Set(matchContacts(names).concat(x.participants && x.participants.length ? [] : (m.contactIds || []))));
+  if (x.type === 'meeting') {
+    const it = newItem('meeting', { title: x.title, date: x.date || null, start: x.start || null, end: x.end || null, priority: prio, place: x.place || '',
+      participants: names, contactIds: cids, linked: [m.id],
+      desc: [x.goals ? t('Цели и что обсудить') + ': ' + x.goals : '', x.notes || '', from].filter(Boolean).join('\n\n') });
+    if (it.start && !it.end) it.end = D.addMin(it.start, S.set.defaultDur || 60);
+    if (!it.date) { it.start = null; it.end = null; }
+    it.autoRecord = !!S.set.autoRecDefault;
+    it.needsTime = !!it.date && !it.start;       // → 09:00 that day: «уточните время и включите автозапись»
+    it.reminders = it.start ? defaultReminders(prio, true) : ['eve'];
+    return it;
+  }
+  const control = x.type === 'control';
+  const title = control && !/^(проконтрол|control|nazorat|kontrol)/i.test(x.title) ? t('Проконтролировать') + ': ' + x.title : x.title;
+  const it = newItem('task', { title, date: x.date || null, start: x.start || null, end: x.end || null, priority: prio, participants: names, contactIds: cids, linked: [m.id],
+    desc: `${from}${x.who ? '\n' + t('Исполнитель') + ': ' + x.who : ''}${x.dueTime ? '\n' + t('Срок') + ': ' + t('до {t}', { t: x.dueTime }) : ''}${x.notes ? '\n' + x.notes : ''}` });
   if (it.start && !it.end) it.end = D.addMin(it.start, 30);
   if (!it.date) { it.start = null; it.end = null; }
   it.reminders = defaultReminders(it.priority, !!it.start);
@@ -386,27 +454,43 @@ async function createProposed(mid, i, silent) {
   await saveItem(it, { render: false });
   x.state = 'created'; x.itemId = it.id;
   await saveItem(m);
-  if (!silent) toast(t('Задача создана ✓'));
+  if (!silent) toast(it.kind === 'meeting' ? t('Встреча создана') + ' ✓' : t('Задача создана ✓'));
 }
 async function reviewProposed(mid, all, auto) {
-  const m = getItem(mid); let n = 0, warn = 0;
+  const m = getItem(mid); let n = 0, warn = 0; const out = { tasks: 0, meetings: 0 };
+  const count = it => { if (it.kind === 'meeting') out.meetings++; else out.tasks++; };
   for (let i = 0; i < m.proposed.length; i++) {
     const x = m.proposed[i]; if (x.state !== 'new') continue;
     if (all) {
       const it = proposedToItem(x, m);
       if (conflicts(it.date, it.start, it.end, it.id).length) warn++;
-      await saveItem(it, { render: false }); x.state = 'created'; x.itemId = it.id; n++;
+      await saveItem(it, { render: false }); x.state = 'created'; x.itemId = it.id; n++; count(it);
       continue;
     }
     const it = proposedToItem(x, m);
     const cs = conflicts(it.date, it.start, it.end, it.id);
-    const v = await dialog({ title: t('Задача {i} из {n}', { i: i + 1, n: m.proposed.length }), text: `<b>${esc(it.title)}</b><br>${esc(whenLabel(it))}${x.who ? '<br>' + t('Исполнитель') + ': ' + esc(x.who) : ''}${cs.length ? '<br><span class="warn">' + t('Пересекается с') + ': ' + esc(cs.map(c => c.title).join(', ')) + '</span>' : ''}`, buttons: [{ l: t('Создать'), v: 'ok', p: 1 }, { l: t('Изменить'), v: 'edit' }, { l: t('Пропустить'), v: 'skip' }, { l: t('Остановить'), v: null }] });
+    const v = await dialog({ title: t('Задача {i} из {n}', { i: i + 1, n: m.proposed.length }), text: `<b>${it.kind === 'meeting' ? '👥 ' : ''}${esc(it.title)}</b><br>${esc(whenLabel(it))}${x.who ? '<br>' + t('Исполнитель') + ': ' + esc(x.who) : ''}${cs.length ? '<br><span class="warn">' + t('Пересекается с') + ': ' + esc(cs.map(c => c.title).join(', ')) + '</span>' : ''}`, buttons: [{ l: t('Создать'), v: 'ok', p: 1 }, { l: t('Изменить'), v: 'edit' }, { l: t('Пропустить'), v: 'skip' }, { l: t('Остановить'), v: null }] });
     if (!v) break;
     if (v === 'skip') { x.state = 'skipped'; continue; }
-    if (v === 'edit') { const saved = await openEditor('task', it); if (saved) { x.state = 'created'; x.itemId = saved.id; n++; } continue; }
+    if (v === 'edit') { const saved = await openEditor(it.kind, it); if (saved) { x.state = 'created'; x.itemId = saved.id; n++; count(saved); } continue; }
     const r = await resolveConflicts(it); if (!r) { x.state = 'skipped'; continue; }
-    await saveItem(it, { render: false }); x.state = 'created'; x.itemId = it.id; n++;
+    await saveItem(it, { render: false }); x.state = 'created'; x.itemId = it.id; n++; count(it);
   }
   await saveItem(m);
-  if (n) toast(t('Создано задач: {n}', { n }) + (warn ? ' ' + t('(с пересечениями: {w} — проверьте календарь)', { w: warn }) : ''), 4000);
+  if (n && !auto) toast(t('Создано задач: {n}', { n }) + (warn ? ' ' + t('(с пересечениями: {w} — проверьте календарь)', { w: warn }) : ''), 4000);
+  return out;
+}
+/* a meeting was agreed without a time → ask for it (from the 09:00 reminder or when it is opened) */
+async function askMeetingTime(id) {
+  const m = getItem(id); if (!m || m.start || !m.date) return;
+  const v = await dialog({ title: t('Во сколько встреча?'), text: `<b>${esc(m.title)}</b><br>${esc(D.long(m.date))}`,
+    html: `<div class="g2" style="margin-top:8px"><div><label class="lbl">${t('Начало')}</label><input class="inp" type="time" id="mt_s"></div><div><label class="lbl">${t('Конец')}</label><input class="inp" type="time" id="mt_e"></div></div>
+      <div class="sw-row"><div><b>${t('Автозапись встречи')}</b><span>${t('Начнётся за {n} мин до начала', { n: S.set.recPre })}</span></div><button class="sw ${m.autoRecord ? 'on' : ''}" id="mt_a" onclick="this.classList.toggle('on')"></button></div>`,
+    buttons: [{ l: t('Сохранить'), p: 1, v: sh => { const s0 = $('#mt_s', sh).value; if (!s0) { toast(t('Укажите время')); return false; } return { s: s0, e: $('#mt_e', sh).value, a: $('#mt_a', sh).classList.contains('on') }; } }, { l: t('Позже'), v: null }] });
+  if (!v) return;
+  m.start = v.s; m.end = v.e && D.toMin(v.e) > D.toMin(v.s) ? v.e : D.addMin(v.s, S.set.defaultDur || 60);
+  m.autoRecord = v.a; m.needsTime = false;
+  m.reminders = defaultReminders(m.priority, true);
+  const ok = await resolveConflicts(m); if (!ok) return;
+  await saveItem(m); toast(t('Сохранено ✓'));
 }

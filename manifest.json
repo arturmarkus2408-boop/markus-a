@@ -17,6 +17,6 @@
   "shortcuts": [
     { "name": "Сказать MARKUS-A", "short_name": "Голос", "url": "./index.html#voice", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
     { "name": "Новая задача", "short_name": "Задача", "url": "./index.html#new", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
-    { "name": "Запись встречи", "short_name": "Запись", "url": "./index.html#record", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+    { "name": "Экстренная запись", "short_name": "SOS-запись", "url": "./index.html#record", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
   ]
 }

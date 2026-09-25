@@ -1,7 +1,7 @@
 /* MARKUS-A service worker: offline cache + notification actions */
-const CACHE = 'markus-a-v2';
+const CACHE = 'markus-a-v3';
 const CORE = ['./', './index.html', './config.js', './manifest.json', './css/app.css',
-  './js/core.js', './js/i18n-dict.js', './js/i18n.js', './js/logic.js', './js/ai.js', './js/cloud.js', './js/ui.js', './js/screens.js', './js/extras.js', './js/voice.js', './js/main.js',
+  './js/core.js', './js/i18n-dict.js', './js/i18n.js', './js/logic.js', './js/ai.js', './js/cloud.js', './js/ui.js', './js/screens.js', './js/extras.js', './js/places.js', './js/help.js', './js/assist.js', './js/voice.js', './js/main.js',
   './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -16,7 +16,7 @@ self.addEventListener('fetch', e => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   // never cache API calls (Supabase, Gemini, Telegram)
-  if (/supabase\.co|googleapis\.com\/v1|generativelanguage|telegram/.test(url.href) && !/fonts\.googleapis/.test(url.href)) return;
+  if (/supabase\.co|googleapis\.com\/v1|generativelanguage|telegram|openstreetmap\.org|nominatim/.test(url.href) && !/fonts\.googleapis/.test(url.href)) return;
   const sameOrigin = url.origin === self.location.origin;
   if (sameOrigin) {
     // network-first for app files so updates arrive; cache fallback offline

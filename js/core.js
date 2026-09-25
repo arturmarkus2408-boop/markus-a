@@ -92,7 +92,9 @@ const DEFAULTS = {
   name: '', theme: 'light', lang: 'ru', workStart: '09:00', workEnd: '19:00', defaultDur: 60,
   morningTime: '09:30', eveTime: '19:00', dayEnd: '22:00', nagHours: 1,
   homeSort: 'time', homeLimit: 6, defaultRemind: [30],
-  aiKey: '', aiModel: 'gemini-2.5-flash', voiceReply: true, autoTasks: 'confirm',
+  aiKey: '', aiModel: 'gemini-2.5-flash', voiceReply: true, autoTasks: 'auto',
+  autoRecDefault: true, recPre: 2, recPost: 30, recDiscreet: true, autoAI: true, recMaxMin: 180,
+  sendSummaryTg: true, cloudOnly: false, speechRate: 1,
   sbUrl: '', sbKey: '', botName: '',
   categories: DEFAULT_CATS, noteCats: DEFAULT_NOTE_CATS,
   myCard: {
@@ -103,6 +105,13 @@ const DEFAULTS = {
     note: 'ИНН 311283164, ОКЭД 69.20.1, Telegram-бот @MarkusJW_bot, канал @MARKUS_JW', footer: 'ИНН 311 283 164 · +998 33 080-10-70'
   }
 };
+/* [key, name, preview colour 1, preview colour 2, browser bar colour] */
+const THEMES = [
+  ['light', 'Светлая', '#f4f5fb', '#5b4dff', '#5b4dff'],
+  ['warm', 'Тёплая', '#f7f0e6', '#c2622d', '#c2622d'],
+  ['dark', 'Тёмная', '#0b0e1a', '#7c6cff', '#0b0e1a'],
+  ['bronze', 'Бронза', '#1a120d', '#c9974f', '#1a120d']
+];
 const S = { items: [], set: null, route: 'home', calView: 'day', selDate: null, taskFilter: 'today', noteCat: 'all', noteQ: '', docFilter: 'all', docQ: '', contactQ: '', meetingId: null, meetTab: 'short', meetList: 'up', showPast: false, scrollCal: true, homeAll: false, subFilter: 'all' };
 const SET_KEY = 'markus_settings';
 function loadSettings() {
@@ -112,6 +121,8 @@ function loadSettings() {
   S.set.myCard = Object.assign(clone(DEFAULTS.myCard), s.myCard || {});
   if (!Array.isArray(S.set.categories) || !S.set.categories.length) S.set.categories = clone(DEFAULT_CATS);
   if (!Array.isArray(S.set.noteCats) || !S.set.noteCats.length) S.set.noteCats = clone(DEFAULT_NOTE_CATS);
+  // v3: meeting-recording & AI defaults the owner asked for (applied once over older saved settings)
+  if (!s.v3) { Object.assign(S.set, { autoTasks: 'auto', autoRecDefault: true, recDiscreet: true, autoAI: true, v3: 1 }); try { localStorage.setItem(SET_KEY, JSON.stringify(S.set)); } catch (e) { } }
 }
 function saveSettings() { localStorage.setItem(SET_KEY, JSON.stringify(S.set)); if (window.Cloud && Cloud.user) Cloud.savePrefs(); }
 const cfg = {
@@ -137,8 +148,9 @@ function newItem(kind, over) {
     start: null, end: null, priority: 'normal', status: 'todo',
     category: kind === 'meeting' ? 'meet' : 'work', noteCat: kind === 'note' ? 'Идеи' : null,
     subtasks: [], repeat: { type: 'none' }, reminders: task ? clone(S.set.defaultRemind || [30]) : [], nag: false,
-    customRemind: null, remindTimes: [], remindLabels: {}, participants: [], contactIds: [], place: '', location: '', files: [], fav: false,
-    autoRecord: false, recording: null, transcript: '', summary: null, proposed: [], linked: [],
+    customRemind: null, remindTimes: [], remindLabels: {}, participants: [], contactIds: [], place: '', location: '', locations: [], links: [], files: [], fav: false,
+    result: null, needsTime: false, emergency: false,
+    autoRecord: kind === 'meeting' && !!(S.set && S.set.autoRecDefault), recording: null, transcript: '', summary: null, proposed: [], linked: [],
     cancelReason: '', cancelledAt: null, doneAt: null,
     phone: '', whatsapp: '', telegram: '', email: '', company: '',
     created: now, updated: now, deleted: false
@@ -172,7 +184,7 @@ async function getFileBlob(f) {
   let b = await DB.get('files', f.id);
   if (!b && f.cloud && window.Cloud && Cloud.user) {
     b = await Cloud.download(f.id);
-    if (b) await DB.put('files', b, f.id);
+    if (b && !S.set.cloudOnly) await DB.put('files', b, f.id);
   }
   return b || null;
 }
