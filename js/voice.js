@@ -296,7 +296,7 @@ const Rec = {
         if (!a.discreet && document.visibilityState === 'visible') showRec(); else recDot();
         if (S.route === 'meeting' || S.route === 'home') render();
       }
-      a.seen = true; a.started = st.startedAt; a.pausedTotal = st.pausedTotal || 0; a.pauseAt = st.pausedAt || null; a.stopAt = st.stopAt; a.size = st.size || 0;
+      a.seen = true; if (a.inCall !== !!st.inCall) { a.inCall = !!st.inCall; if (S.route === 'meeting') render(); } a.started = st.startedAt; a.pausedTotal = st.pausedTotal || 0; a.pauseAt = st.pausedAt || null; a.stopAt = st.stopAt; a.size = st.size || 0;
       if (a.silent !== !!st.silent) { a.silent = !!st.silent; if (a.silent) toast(t('Запись не слышит микрофон! Откройте уведомление MARKUS-A.'), 6000); }
     } else if (a && a.native && !a.stopping && (a.seen || Date.now() - a.created > 10000)) Rec.nativeEnded();
   },

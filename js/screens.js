@@ -255,12 +255,12 @@ SCREENS.meeting = () => {
   if ((m.subtasks || []).length) b += `<div class="card"><div class="h4" style="margin-top:0">${t('Подзадачи')} · ${progress(m)}%</div>${m.subtasks.map(s => `<div class="sub ${s.done ? 'done' : ''}"><button class="chk sq ${s.done ? 'on' : ''}" onclick="subToggle('${m.id}','${s.id}')">${s.done ? ic('checkmark', 12) : ''}</button><span class="sub-b"><span class="sub-t">${esc(s.text)}</span><span class="sub-m">${subMeta(m, s)}</span></span></div>`).join('')}</div>`;
   if (recOn) {
     const ra = Rec.active;
-    b += `<div class="card rec-card ${ra.discreet ? 'quiet' : ''}"><div style="display:flex;align-items:center;gap:10px"><i class="rec-mini ${ra.pauseAt ? 'paused' : ''}"></i><b id="m_rec_t" style="font-variant-numeric:tabular-nums">${fmtDur(Rec.elapsed())}</b><span class="muted" style="font-size:12px;flex:1">${t('до {t}', { t: new Date(ra.stopAt).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) })}</span></div>
+    b += `<div class="card rec-card ${ra.discreet ? 'quiet' : ''}"><div style="display:flex;align-items:center;gap:10px"><i class="rec-mini ${ra.pauseAt ? 'paused' : ''}"></i><b id="m_rec_t" style="font-variant-numeric:tabular-nums">${fmtDur(Rec.elapsed())}</b><span class="muted" style="font-size:12px;flex:1">${t('до {t}', { t: new Date(ra.stopAt).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) })}</span></div>${ra.inCall ? `<div class="hint" style="margin-top:6px">📞 ${t('Звонок — запись на паузе и продолжится сама, когда вы положите трубку')}</div>` : ''}
       <div class="btns" style="margin-top:8px"><button class="btn ghost" onclick="Rec.stop()">${ic('rec', 16)} ${t('Остановить')}</button><button class="btn ghost" onclick="Rec.pause()">${ra.pauseAt ? ic('play', 16) : ic('pause', 16)}</button><button class="btn ghost" onclick="Rec.extend(30)">+30 ${t('мин')}</button>${ra.discreet ? '' : `<button class="btn ghost" onclick="showRec()">${ic('mic', 16)}</button>`}</div></div>`;
   }
   else if (!m.recording) b += `<button class="btn pri full" onclick="Rec.start('${m.id}')">${ic('mic', 18)} ${t('Начать запись встречи')}</button>${m.autoRecord && m.start && m.date >= D.today() ? `<div class="hint" style="text-align:center">${t('Автозапись включена: начнётся в {t}', { t: D.addMin(m.start, -(+S.set.recPre || 0)) })}</div>` : ''}`;
   if (m.recording) {
-    b += `<div class="card" style="margin-top:10px"><div class="h4" style="margin-top:0">${t('Запись')} · ${fmtDur(m.recording.duration || 0)} · ${mb(m.recording.size)}</div><div id="m_audio"><div class="hint">${t('Загрузка…')}</div></div>
+    b += `<div class="card" style="margin-top:10px"><div class="h4" style="margin-top:0">${t('Запись')} · ${fmtDur(m.recording.duration || 0)} · ${mb(m.recording.size)}</div>${recCallsHtml(m.recording)}<div id="m_audio"><div class="hint">${t('Загрузка…')}</div></div>
       <div class="btns" style="margin-top:8px"><button class="btn ghost" onclick="shareRec('${m.id}')">${ic('share', 16)} ${t('Поделиться')}</button><button class="btn ghost" onclick="saveRec('${m.id}')">${ic('download', 16)} ${t('В телефон')}</button></div>
       ${Processing.has(m.id) ? `<div class="ai-box" style="margin-top:8px">${t('AI готовит итоги… Можно пользоваться приложением.')}</div>` : `<button class="btn ${m.transcript ? 'ghost' : 'pri'} full" style="margin-top:8px" onclick="processMeeting('${m.id}')">${ic('ai', 16)} ${m.transcript ? t('Обработать заново') : t('Обработать AI')}</button>`}
       ${m.aiError && !m.summary ? `<div class="hint warn">${esc(m.aiError)}</div>` : ''}
@@ -503,7 +503,7 @@ SCREENS.settings = () => {
     <div class="btns"><button class="btn ghost" onclick="freePhoneMemory()">${t('Освободить память телефона')}</button></div></div>`;
   b += sec(t('Данные')) + `<div class="set-card"><div class="hint" style="margin-top:12px">${t('Резервная копия задач, встреч, контактов и заметок (без файлов).')}</div><div class="btns"><button class="btn ghost" onclick="exportBackup()">${ic('download', 16)} ${t('Скачать копию')}</button><label class="btn ghost">${t('Загрузить копию')}<input type="file" accept=".json,application/json" hidden onchange="importBackup(this.files[0])"></label></div>
     ${window._installPrompt ? `<div class="btns"><button class="btn pri" onclick="installApp()">${t('Установить приложение')}</button></div>` : ''}</div>`;
-  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 3.2</div>`;
+  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 3.3</div>`;
   return { top: titleTop(t('Настройки')), body: b, after: async () => { const i = await storageInfo(); const el = $('#st_info'); if (el) el.textContent = t('Занято на телефоне: {a} · файлов: {n}, из них в облаке: {c}', { a: mb(i.used), n: i.n, c: i.cloud }); } };
 };
 async function testAI() { try { toast(t('Проверяю…')); const r = await AI.call([{ text: 'Reply with one word in ' + langName() + ': works' }]); toast(t('AI отвечает: {r} ✓', { r: r.slice(0, 40) }), 3000); } catch (e) { toast(e.message, 5000); } }
@@ -582,4 +582,10 @@ function audioBoost(btn) {
     btn.classList.toggle('pri', g.on); btn.classList.toggle('ghost', !g.on);
     btn.textContent = g.on ? '🔊 ' + t('Усиление включено — нажмите, чтобы выключить') : '🔊 ' + t('Усилить тихие звуки');
   } catch (e) { toast(t('Этот телефон не умеет усиливать звук при прослушивании'), 4000); }
+}
+
+function recCallsHtml(r) {
+  const c = (r && r.calls) || []; if (!c.length) return '';
+  const hm = ms => { const d = new Date(ms); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+  return `<div class="hint" style="margin:0 0 6px">📞 ${t('Пауза на звонки (запись продолжилась сама)')}: ${c.map(x => hm(x.from) + '–' + hm(x.to)).join(', ')}</div>`;
 }

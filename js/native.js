@@ -170,6 +170,8 @@ async function nativeImport() {
         await saveItem(m, { render: false });
       }
       await afterRecording(m.id, blob, 'audio/mp4', (r.dur || 0) / 1000, { auto: true });
+      const mm = getItem(m.id);   // phone calls during the recording (the recording paused and continued by itself)
+      if (mm && mm.recording && Array.isArray(r.calls) && r.calls.length) { mm.recording.calls = r.calls.filter(c => c && c.from && c.to); await saveItem(mm, { render: S.route === 'meeting' }); }
       NATIVE.recDone(r.file);
       n++;
     }
