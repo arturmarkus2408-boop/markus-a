@@ -222,6 +222,7 @@ const Rec = {
   async start(meetingId, o = {}) {
     if (typeof o === 'boolean') o = { auto: o };
     if (Rec.active) { if (!Rec.active.discreet) showRec(); return true; }
+    if (NATIVE) return Rec.startNative(meetingId, o);
     if (!navigator.mediaDevices || !window.MediaRecorder) { if (!o.auto) toast(t('Запись не поддерживается этим браузером')); return false; }
     let stream;
     try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
@@ -249,10 +250,64 @@ const Rec = {
     if (S.route === 'meeting' || S.route === 'home') render();
     return true;
   },
-  pause() { const a = Rec.active; if (!a) return; if (a.pauseAt) { a.pausedTotal += Date.now() - a.pauseAt; a.pauseAt = null; a.mr.resume(); } else { a.pauseAt = Date.now(); a.mr.pause(); } if (!a.discreet) showRec(); else render(); },
-  extend(min) { const a = Rec.active; if (!a) return; a.stopAt = Math.max(a.stopAt, Date.now()) + min * 60000; toast(t('Запись продлена до {t}', { t: new Date(a.stopAt).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) })); render(); },
+  /* ---- Android app: the phone records by itself (screen off, app closed); here we only mirror it ---- */
+  startNative(meetingId, o) {
+    const m = getItem(meetingId);
+    const emergency = !!(o.emergency || (m && m.emergency));
+    const stopAt = Rec.stopAtFor(m, emergency);
+    let r = 'error'; try { r = NATIVE.recStart(meetingId, m ? m.title || '' : t('Запись'), stopAt); } catch (e) { }
+    if (r === 'busy') { if (!o.auto) toast(t('Уже идёт другая запись')); Rec.syncNative(); return false; }
+    if (r !== 'ok') { if (!o.auto) toast(r === 'noperm' ? t('Разрешите приложению доступ к микрофону и нажмите ещё раз') : t('Не удалось начать запись'), 4000); return false; }
+    const a = { native: true, meetingId, created: Date.now(), started: Date.now(), pausedTotal: 0, pauseAt: null, stopAt, size: 0, mime: 'audio/mp4',
+      discreet: o.discreet != null ? !!o.discreet : !!S.set.recDiscreet, auto: !!o.auto, emergency };
+    a.tick = setInterval(recTick, 1000);
+    Rec.active = a;
+    if (typeof autoTried !== 'undefined') autoTried.add(meetingId);   // a manual stop is final: the app will not restart it
+    if (m && m.status === 'todo') { m.status = 'progress'; saveItem(m, { render: false }); }
+    if (typeof awakeRec !== 'undefined' && awakeRec) { try { awakeRec.release(); } catch (e) { } awakeRec = null; }
+    if (a.discreet) { recDot(); try { NATIVE.vibrate(60); } catch (e) { } } else showRec();
+    if (S.route === 'meeting' || S.route === 'home') render();
+    return true;
+  },
+  syncNative() {
+    if (!NATIVE) return;
+    let st; try { st = JSON.parse(NATIVE.recStatus()); } catch (e) { return; }
+    let a = Rec.active;
+    if (st.active) {
+      if (!a || a.meetingId !== st.id) {   // started by the phone itself (schedule) — show it here too
+        if (a) clearInterval(a.tick);
+        const m = getItem(st.id);
+        a = Rec.active = { native: true, meetingId: st.id, created: Date.now(), mime: 'audio/mp4', auto: true, discreet: a ? a.discreet : !!S.set.recDiscreet, emergency: !!(m && m.emergency) };
+        a.tick = setInterval(recTick, 1000);
+        if (typeof autoTried !== 'undefined') autoTried.add(st.id);
+        if (m && m.status === 'todo') { m.status = 'progress'; saveItem(m, { render: false }); }
+        if (!a.discreet && document.visibilityState === 'visible') showRec(); else recDot();
+        if (S.route === 'meeting' || S.route === 'home') render();
+      }
+      a.seen = true; a.started = st.startedAt; a.pausedTotal = st.pausedTotal || 0; a.pauseAt = st.pausedAt || null; a.stopAt = st.stopAt; a.size = st.size || 0;
+      if (a.silent !== !!st.silent) { a.silent = !!st.silent; if (a.silent) toast(t('Запись не слышит микрофон! Откройте уведомление MARKUS-A.'), 6000); }
+    } else if (a && a.native && !a.stopping && (a.seen || Date.now() - a.created > 10000)) Rec.nativeEnded();
+  },
+  nativeEnded() {
+    const a = Rec.active; if (!a || !a.native) return;
+    clearInterval(a.tick); Rec.active = null; hideRec(); recDot();
+    if (S.route === 'meeting' || S.route === 'home') render();
+    nativeImport();
+  },
+  pause() { const a = Rec.active; if (!a) return;
+    if (a.native) {
+      if (a.pauseAt) { a.pausedTotal += Date.now() - a.pauseAt; a.pauseAt = null; NATIVE.recResume(); } else { a.pauseAt = Date.now(); NATIVE.recPause(); }
+      if (!a.discreet) showRec(); else { recDot(); render(); } return;
+    }
+    if (a.pauseAt) { a.pausedTotal += Date.now() - a.pauseAt; a.pauseAt = null; a.mr.resume(); } else { a.pauseAt = Date.now(); a.mr.pause(); } if (!a.discreet) showRec(); else render(); },
+  extend(min) { const a = Rec.active; if (!a) return; if (a.native) { try { NATIVE.recExtend(min); } catch (e) { } } a.stopAt = Math.max(a.stopAt, Date.now()) + min * 60000; toast(t('Запись продлена до {t}', { t: new Date(a.stopAt).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) })); render(); },
   async stop(o = {}) {
     const a = Rec.active; if (!a || a.stopping) return; a.stopping = true;
+    if (a.native) {   // Android saves the file; it comes back here through nativeImport()
+      try { NATIVE.recStop(); } catch (e) { }
+      setTimeout(() => { if (Rec.active === a) Rec.nativeEnded(); }, 2500);
+      return;
+    }
     if (a.pauseAt) { a.pausedTotal += Date.now() - a.pauseAt; a.pauseAt = null; }
     const dur = Rec.elapsed();
     await new Promise(r => { a.mr.onstop = r; try { a.mr.stop(); } catch (e) { r(); } setTimeout(r, 4000); });
@@ -300,7 +355,7 @@ function showRec() {
       <button class="btn rec-stop" onclick="Rec.stop()">${ic('rec', 18)} ${t('Остановить')}</button>
       <button class="btn dk-ghost" onclick="Rec.pause()">${a.pauseAt ? ic('play', 18) + ' ' + t('Продолжить') : ic('pause', 18) + ' ' + t('Пауза')}</button>
       <button class="btn dk-ghost" onclick="Rec.active.discreet=true;hideRec();recDot()">${t('Скрыть (незаметная запись)')}</button>
-      <div class="vo-box" style="margin-top:14px">${t('Не закрывайте приложение — запись идёт, пока оно открыто (можно свернуть кнопкой «назад» и работать в MARKUS-A). Готовая запись появится в разделе «Ещё → Записи»: оттуда её можно отправить в Telegram/WhatsApp или сохранить в телефон.')}</div>
+      <div class="vo-box" style="margin-top:14px">${a.native ? t('Запись идёт в фоне: можно заблокировать телефон или закрыть приложение — она продолжится и остановится сама. Готовая запись появится во встрече, AI подготовит итоги.') : t('Не закрывайте приложение — запись идёт, пока оно открыто (можно свернуть кнопкой «назад» и работать в MARKUS-A). Готовая запись появится в разделе «Ещё → Записи»: оттуда её можно отправить в Telegram/WhatsApp или сохранить в телефон.')}</div>
     </div>`;
   drawWave();
 }
@@ -319,7 +374,8 @@ function recTick() {
   const ms = $('#m_rec_t'); if (ms) ms.textContent = fmtDur(Rec.elapsed());
   const pill = $('#recPill'); if (!pill.hidden) pill.innerHTML = `<i></i> ${t('Запись')} ${fmtDur(Rec.elapsed())}`;
   // stops by itself: meeting end + N minutes (Settings → Запись), so a forgotten recorder never runs for hours
-  if (!a.pauseAt && Date.now() >= a.stopAt) Rec.stop({ auto: true });
+  if (a.native) Rec.syncNative();   // in the Android app the phone stops it by itself
+  else if (!a.pauseAt && Date.now() >= a.stopAt) Rec.stop({ auto: true });
 }
 function drawWave() {
   const a = Rec.active, cv = $('#r_wave'); if (!a || !cv || !a.an) return;
@@ -353,6 +409,11 @@ async function afterRecording(meetingId, blob, mime, dur, o = {}) {
   if (!m) { m = newItem('meeting', { title: t('Запись') + ' ' + D.short(D.today()), date: D.today() }); }
   if (!blob.size) { toast(t('Запись пустая')); return; }
   const fid = uid(); await DB.put('files', blob, fid);
+  // a second recording of the same meeting: the earlier one is kept among the meeting materials
+  if (m.recording && m.recording.fileId) {
+    const p = m.recording, tm = (p.created ? new Date(p.created) : new Date());
+    (m.files = m.files || []).push({ id: p.fileId, name: t('Запись') + ' ' + D.fmt(tm) + ' ' + pad(tm.getHours()) + '-' + pad(tm.getMinutes()) + (/mp4|m4a|aac/.test(p.mime || '') ? '.m4a' : /ogg/.test(p.mime || '') ? '.ogg' : '.webm'), type: p.mime || 'audio/mp4', size: p.size || 0, added: p.created || new Date().toISOString(), fav: !!p.fav, cloud: !!p.cloud });
+  }
   m.recording = { fileId: fid, mime, duration: dur, size: blob.size, created: new Date().toISOString(), fav: false, cloud: false };
   if (m.emergency) m.end = D.nowTime() > m.start ? D.nowTime() : m.end;
   if (m.status !== 'cancelled' && m.date && m.date <= D.today()) m.status = 'done';
@@ -361,7 +422,7 @@ async function afterRecording(meetingId, blob, mime, dur, o = {}) {
   notify(t('Запись сохранена'), m.title + ' · ' + fmtDur(dur), { tag: 'recdone-' + m.id, id: m.id });
   if (document.visibilityState === 'visible' && !o.auto) { if (S.route !== 'meeting' || S.meetingId !== m.id) go('meeting', m.id); else render(); }
   else if (S.route === 'meeting' && S.meetingId === m.id) render();
-  if (S.set.autoAI && AI.ready()) { toast(t('Запись сохранена ✓ AI готовит итоги…'), 4000); processMeeting(m.id, { auto: true }); }
+  if (S.set.autoAI && AI.ready() && !m.test) { toast(t('Запись сохранена ✓ AI готовит итоги…'), 4000); processMeeting(m.id, { auto: true }); }
   else toast(t('Запись сохранена ✓ (Ещё → Записи)'), 3500);
 }
 async function recoverRecording() {

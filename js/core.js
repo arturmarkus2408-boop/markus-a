@@ -12,6 +12,8 @@ function fmtDur(sec) { sec = Math.max(0, Math.round(sec)); const h = Math.floor(
 function durLabel(min) { if (min < 60) return min + ' ' + t('мин'); const h = Math.floor(min / 60), m = min % 60; return h + ' ' + t('ч') + (m ? ' ' + m + ' ' + t('мин') : ''); }
 function plural(n, a, b, c) { const m10 = n % 10, m100 = n % 100; if (m10 === 1 && m100 !== 11) return a; if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return b; return c; }
 const cap = s => s ? s[0].toUpperCase() + s.slice(1) : s;
+/* Android app (MARKUS-A.apk) exposes window.MarkusNative; in a normal browser this is null */
+const NATIVE = (window.MarkusNative && typeof window.MarkusNative === 'object') ? window.MarkusNative : null;
 
 /* ================= dates (local time, locale-aware) ================= */
 const D = {

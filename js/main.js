@@ -29,8 +29,9 @@ function tick() {
         const body = lab || [whenLabel(it), it.place].filter(Boolean).join(' · ') || 'MARKUS-A';
         const actions = lab ? [{ action: 'open', title: t('Открыть') }, { action: 'snooze', title: '💤 ' + t('+1 час') }]
           : [{ action: 'done', title: '✓ ' + t('Выполнено') }, { action: 'snooze', title: '💤 ' + t('+10 мин') }];
-        notify(title, body + (it.nag ? '\n' + t('Напоминание повторится, пока не отметите «Выполнено»') : ''), { tag: 'r-' + it.id, id: it.id, actions, sticky });
-        beep(); toast(title + (lab ? ' — ' + lab : ''), 6000);
+        // in the Android app the phone shows reminders by itself (even when the app is closed)
+        if (!NATIVE) notify(title, body + (it.nag ? '\n' + t('Напоминание повторится, пока не отметите «Выполнено»') : ''), { tag: 'r-' + it.id, id: it.id, actions, sticky });
+        if (!NATIVE || document.visibilityState === 'visible') beep(); toast(title + (lab ? ' — ' + lab : ''), 6000);
       }
     }
     if (it.date && isOverdue(it) && !(Rec.active && Rec.active.meetingId === it.id)) {
@@ -50,7 +51,7 @@ function tick() {
       const st = startAt(it).getTime() - (+S.set.recPre || 0) * 60000;
       const until = D.dt(it.date, it.end || D.addMin(it.start, S.set.defaultDur || 60)).getTime() + (+S.set.recPost || 0) * 60000;
       if (now >= st && now < until) {
-        const ask = () => { if (recAsked.has(it.id)) return; recAsked.add(it.id); notify('🎙 ' + t('Встреча «{x}» начинается', { x: it.title }), t('Нажмите, чтобы начать запись'), { tag: 'rec-' + it.id, url: '#rec/' + it.id, sticky: true }); };
+        const ask = () => { if (NATIVE || recAsked.has(it.id)) return; recAsked.add(it.id); notify('🎙 ' + t('Встреча «{x}» начинается', { x: it.title }), t('Нажмите, чтобы начать запись'), { tag: 'rec-' + it.id, url: '#rec/' + it.id, sticky: true }); };
         if (document.visibilityState === 'visible') { autoTried.add(it.id); Rec.start(it.id, { auto: true }).then(ok => { if (!ok) { ask(); recBlocked = it.id; render(); } else render(); }); }
         else ask();
       }
@@ -76,6 +77,8 @@ async function handleAction(action, id) {
   if (action === 'voice') return openVoice();
   if (action === 'new') return openEditor('task');
   if (action === 'record') return quickRecord();
+  if (action === 'recimport') { const n = await nativeImport(); if (!n && S.route !== 'home') go('home'); return; }
+  if (action === 'micperm') { go('settings'); if (NATIVE) NATIVE.openSetup('mic'); return; }
   if (!it) return;
   if (action === 'done') { await setStatus(it, 'done'); toast(t('Готово ✓') + ' ' + it.title); }
   else if (action === 'snooze') { const lab = Object.values(it.remindLabels || {}).length; it.customRemind = new Date(Date.now() + (lab ? 60 : 10) * 60000).toISOString(); await saveItem(it); toast(lab ? t('Напомню через час') : t('Напомню через 10 минут')); }
@@ -169,6 +172,7 @@ async function offerPeskovImport() {
 
 /* ================= boot ================= */
 async function boot() {
+  if (NATIVE) nativeInstall();
   loadSettings(); loadAIDict(S.set.lang); document.documentElement.lang = S.set.lang || 'ru'; applyTheme();
   { const st = document.getElementById('splashTag'); if (st) st.textContent = t('Твой личный AI-помощник'); }
   S.selDate = D.today();
@@ -192,6 +196,6 @@ async function boot() {
   setInterval(() => Cloud.sync(), 60000);
   tick();
   Cloud.init().then(() => { if (S.route === 'settings') render(); });
-  recoverRecording().then(offerPeskovImport);
+  recoverRecording().then(() => NATIVE ? nativeBoot() : null).then(offerPeskovImport);
 }
 boot();

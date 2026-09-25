@@ -5,6 +5,12 @@
    ========================================================================== */
 
 /* ---------- speech (text → voice), split into short pieces so long texts are not cut off ---------- */
+function speechChunks(text) {
+  const parts = String(text || '').replace(/\s+\n/g, '\n').split(/(?<=[.!?…;])\s+|\n+/).map(x => x.trim()).filter(Boolean);
+  const chunks = [];
+  parts.forEach(p => { while (p.length > 220) { const i = p.lastIndexOf(' ', 220); chunks.push(p.slice(0, i > 60 ? i : 220)); p = p.slice(i > 60 ? i + 1 : 220); } if (p) chunks.push(p); });
+  return chunks;
+}
 const Speech = {
   on: false,
   voice() {
@@ -17,9 +23,7 @@ const Speech = {
   say(text, o = {}) {
     if (!window.speechSynthesis) { toast(t('Этот браузер не умеет говорить вслух')); return; }
     Speech.stop();
-    const parts = String(text || '').replace(/\s+\n/g, '\n').split(/(?<=[.!?…;])\s+|\n+/).map(x => x.trim()).filter(Boolean);
-    const chunks = [];
-    parts.forEach(p => { while (p.length > 220) { const i = p.lastIndexOf(' ', 220); chunks.push(p.slice(0, i > 60 ? i : 220)); p = p.slice(i > 60 ? i + 1 : 220); } if (p) chunks.push(p); });
+    const chunks = speechChunks(text);
     if (!chunks.length) return;
     Speech.on = true;
     const v = Speech.voice();
