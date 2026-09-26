@@ -112,7 +112,11 @@ const THEMES = [
   ['light', 'Светлая', '#f4f5fb', '#5b4dff', '#5b4dff'],
   ['warm', 'Тёплая', '#f7f0e6', '#c2622d', '#c2622d'],
   ['dark', 'Тёмная', '#0b0e1a', '#7c6cff', '#0b0e1a'],
-  ['bronze', 'Бронза', '#1a120d', '#c9974f', '#1a120d']
+  ['bronze', 'Бронза', '#1a120d', '#c9974f', '#1a120d'],
+  ['violet', 'Фиолетовая', '#fbfbfb', '#6f2dbd', '#6f2dbd', false, ['#6f2dbd', '#a663cc', '#171123', '#fbfbfb']],
+  ['neon', 'Неон', '#050208', '#00ffd4', '#050208', true, ['#00ffd4', '#5465ff', '#d2ddff', '#050208']],
+  ['olive', 'Олива', '#eae6d2', '#505039', '#505039', false, ['#121a1b', '#505039', '#a7aa63', '#eae6d2']],
+  ['ocean', 'Океан', '#fef7f8', '#22819a', '#22819a', false, ['#90c2e7', '#fef7f8', '#cdd4dd', '#22819a']]
 ];
 const S = { items: [], set: null, route: 'home', calView: 'day', selDate: null, taskFilter: 'today', noteCat: 'all', noteQ: '', docFilter: 'all', docQ: '', contactQ: '', meetingId: null, meetTab: 'short', meetList: 'up', showPast: false, scrollCal: true, homeAll: false, subFilter: 'all' };
 const SET_KEY = 'markus_settings';

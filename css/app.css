@@ -436,3 +436,35 @@ i.bspin{width:15px;height:15px;border:2px solid currentColor;border-top-color:tr
 .wk-day.today .wk-h b{color:var(--acc)}
 .wk-free{padding:10px 14px;border-radius:12px;background:var(--card);border:1px dashed var(--brd);font-size:13px;color:var(--txt3)}
 .blk .blk-t{font-size:10px;opacity:.8}
+
+/* v3.5 — four more palettes */
+/* Фиолетовая: #6F2DBD · #A663CC · #171123 · #FBFBFB */
+[data-pal=violet]{--bg:#f4f0fa;--card:#fff;--card2:#f7f2fc;--txt:#171123;--txt2:#5b4e6e;--txt3:#9c91ac;--brd:#e6ddf1;
+  --acc:#6f2dbd;--acc2:#a663cc;--accs:#efe4f8;--grad:linear-gradient(135deg,#6f2dbd 0%,#8a45c6 55%,#a663cc 100%);
+  --sh:0 1px 2px rgba(23,17,35,.05),0 6px 20px rgba(111,45,189,.08)}
+[data-pal=violet] .now{background:linear-gradient(135deg,#f1e6fa,#eadcf7);border-color:#dfcbf2}
+[data-pal=violet] .splash{background:radial-gradient(120% 80% at 50% 30%,#6f2dbd 0%,#171123 75%)}
+[data-pal=violet] .dk-mic i{box-shadow:0 8px 22px rgba(111,45,189,.4)}
+/* Неон (тёмная): #00FFD4 · #5465FF · #D2DDFF · #050208 */
+[data-pal=neon]{--bg:#050208;--card:#0f0e22;--card2:#171634;--txt:#eef1ff;--txt2:#b3bde9;--txt3:#6d76a6;--brd:#232452;
+  --acc:#5465ff;--acc2:#00ffd4;--accs:#191d5c;--grad:linear-gradient(135deg,#5465ff 0%,#4a5af0 60%,#3f4fe0 100%);
+  --grn:#00e0bb;--sh:none}
+[data-pal=neon] .now{background:linear-gradient(135deg,#141a5c,#0b2a3a);border-color:#26307a}
+[data-pal=neon] .splash,[data-pal=neon] .dark-ov{background:radial-gradient(120% 80% at 50% 25%,#2a33a8 0%,#0a0820 60%,#050208 100%)}
+[data-pal=neon] .dk-mic i{box-shadow:0 0 0 2px rgba(0,255,212,.55),0 8px 24px rgba(84,101,255,.45)}
+[data-pal=neon] .chip.on,[data-pal=neon] .seg button.on{box-shadow:inset 0 -2px 0 #00ffd4}
+[data-pal=neon] .wd.sel b{box-shadow:0 0 0 2px #00ffd4}
+/* Олива: #121A1B · #505039 · #A7AA63 · #EAE6D2 */
+[data-pal=olive]{--bg:#eae6d2;--card:#f8f6ec;--card2:#f0ecdc;--txt:#121a1b;--txt2:#505039;--txt3:#8c8b6e;--brd:#dad5bd;
+  --acc:#505039;--acc2:#a7aa63;--accs:#e2e1c6;--grad:linear-gradient(135deg,#6e7046 0%,#5a5a3f 55%,#464631 100%);
+  --sh:0 1px 2px rgba(18,26,27,.05),0 6px 20px rgba(80,80,57,.09)}
+[data-pal=olive] .now{background:linear-gradient(135deg,#f1efdf,#e5e3c9);border-color:#d4d0b1}
+[data-pal=olive] .splash{background:radial-gradient(120% 80% at 50% 30%,#6e7046 0%,#121a1b 75%)}
+[data-pal=olive] .dk-mic i{box-shadow:0 8px 22px rgba(80,80,57,.4)}
+/* Океан: #90C2E7 · #FEF7F8 · #CDD4DD · #22819A */
+[data-pal=ocean]{--bg:#e9eff4;--card:#fef7f8;--card2:#f1f4f8;--txt:#10303b;--txt2:#48626d;--txt3:#8ea2ac;--brd:#cdd4dd;
+  --acc:#22819a;--acc2:#90c2e7;--accs:#dcebf5;--grad:linear-gradient(135deg,#2b95b0 0%,#22819a 55%,#1b6a80 100%);
+  --sh:0 1px 2px rgba(16,48,59,.05),0 6px 20px rgba(34,129,154,.09)}
+[data-pal=ocean] .now{background:linear-gradient(135deg,#e2f0fa,#d3e7f4);border-color:#bcd7ea}
+[data-pal=ocean] .splash{background:radial-gradient(120% 80% at 50% 30%,#22819a 0%,#0e3a46 75%)}
+[data-pal=ocean] .dk-mic i{box-shadow:0 8px 22px rgba(34,129,154,.4)}

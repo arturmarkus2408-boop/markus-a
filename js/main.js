@@ -1,10 +1,11 @@
 'use strict';
 function applyTheme() {
   const th = THEMES.find(x => x[0] === S.set.theme) || THEMES[0];
-  const dark = th[0] === 'dark' || th[0] === 'bronze';
+  const dark = th[5] != null ? th[5] : (th[0] === 'dark' || th[0] === 'bronze');
   document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-  document.documentElement.setAttribute('data-pal', th[0] === 'warm' || th[0] === 'bronze' ? th[0] : '');
+  document.documentElement.setAttribute('data-pal', th[0] === 'light' || th[0] === 'dark' ? '' : th[0]);
   const m = $('meta[name=theme-color]'); if (m) m.content = th[4];
+  try { if (NATIVE && typeof NATIVE.setStatusBar === 'function') NATIVE.setStatusBar(th[4]); } catch (e) { }   // Android status bar in the theme colour
 }
 
 /* ================= reminders & auto-record ticker ================= */
