@@ -435,7 +435,7 @@ async function afterRecording(meetingId, blob, mime, dur, o = {}) {
   if (document.visibilityState === 'visible' && !o.auto) { if (S.route !== 'meeting' || S.meetingId !== m.id) go('meeting', m.id); else render(); }
   else if (S.route === 'meeting' && S.meetingId === m.id) render();
   if (S.set.autoAI && AI.ready() && !m.test) { toast(t('Запись сохранена ✓ AI готовит итоги…'), 4000); processMeeting(m.id, { auto: true }); }
-  else toast(t('Запись сохранена ✓ (Ещё → Записи)'), 3500);
+  else { toast(t('Запись сохранена ✓ (Ещё → Записи)'), 3500); autoAudioToTelegram(m.id); }
 }
 async function recoverRecording() {
   const info = JSON.parse(localStorage.getItem('markus_recbuf') || 'null'); if (!info) return;
@@ -486,11 +486,12 @@ async function processMeeting(id, o = {}) {
     const msg = t('Итоги готовы') + ': ' + m.title + (created.tasks || created.meetings ? ' · ' + t('задач: {a}, встреч: {b}', { a: created.tasks, b: created.meetings }) : '');
     toast(msg, 5000);
     notify(t('Итоги встречи готовы'), msg, { tag: 'sum-' + id, id });
-    if (S.set.sendSummaryTg && Cloud.user && Cloud.profile && Cloud.profile.tg_chat_id) meetToTelegram(id, true);
+    if (S.set.sendSummaryTg && Cloud.user && Cloud.profile && Cloud.profile.tg_chat_id) await meetToTelegram(id, true);
+    autoAudioToTelegram(id);
   } catch (e) {
     if (entry) { entry.locked = false; closeSheet(); }
     m.aiError = e.message; saveItem(m, { render: false });
-    if (o.auto) { toast(t('AI не смог обработать запись: {e}', { e: e.message }), 6000); notify(t('AI не смог обработать запись'), e.message, { tag: 'sum-' + id, id }); }
+    if (o.auto) { toast(t('AI не смог обработать запись: {e}', { e: e.message }), 6000); notify(t('AI не смог обработать запись'), e.message, { tag: 'sum-' + id, id }); autoAudioToTelegram(id); }
     else dialog({ title: t('Не получилось'), text: esc(e.message), buttons: [{ l: t('Понятно'), v: 1, p: 1 }] });
   } finally { Processing.delete(id); }
 }

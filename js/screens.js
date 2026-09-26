@@ -81,7 +81,7 @@ function layoutDay(items) {
 }
 function timeGrid(dates) {
   const HH = 52, td = D.today();
-  const per = dates.map(d => itemsOn(d).filter(i => i.status !== 'cancelled'));
+  const per = dates.map(d => itemsOn(d).filter(i => i.status !== 'cancelled' && (S.calDone || i.status !== 'done')));
   const subsPer = dates.map(d => dayAgenda(d).filter(e => e.subs));
   let h0 = 7, h1 = 22;
   per.flat().forEach(i => { if (i.start) { h0 = Math.min(h0, Math.floor(D.toMin(i.start) / 60)); h1 = Math.max(h1, Math.ceil(D.toMin(i.end || i.start) / 60) + (i.end ? 0 : 1)); } });
@@ -94,7 +94,7 @@ function timeGrid(dates) {
   const cols = dates.map((d, k) => {
     const blocks = layoutDay(per[k]).map(x => {
       const top = (x.s - h0 * 60) / 60 * HH, hgt = Math.max(22, (x.e - x.s) / 60 * HH - 2), w = 100 / x.n, p = progress(x.i);
-      return `<div class="blk ${x.i.status === 'done' ? 'done' : ''}" style="--c:${catOf(x.i).color};top:${top}px;height:${hgt}px;left:calc(${x.lane * w}% + 2px);width:calc(${w}% - 4px)" data-open="${x.i.id}"><b>${x.i.kind === 'meeting' ? '👥 ' : ''}${esc(x.i.title)}</b>${hgt > 34 ? `<span>${esc(timeLabel(x.i))}${p != null && (x.i.subtasks || []).length ? ' · ' + p + '%' : ''}</span>` : ''}</div>`;
+      return `<div class="blk ${x.i.status === 'done' ? 'done' : ''}" style="--c:${kindColor(x.i)};top:${top}px;height:${hgt}px;left:calc(${x.lane * w}% + 2px);width:calc(${w}% - 4px)" data-open="${x.i.id}"><b>${x.i.kind === 'meeting' ? '👥 ' : ''}${esc(x.i.title)}</b>${hgt > 34 ? `<span>${esc(timeLabel(x.i))}${p > 0 && (x.i.subtasks || []).length ? ' · ' + p + '%' : ''}</span>` : `<span class="blk-t">${esc(x.i.start)}</span>`}</div>`;
     }).join('');
     const nm = D.nowMin();
     const line = d === td && nm >= h0 * 60 && nm < h1 * 60 ? `<div class="now-line" style="top:${(nm - h0 * 60) / 60 * HH}px"></div>` : '';
@@ -120,7 +120,7 @@ function monthGrid() {
     if (k === 35 && dd.getMonth() !== sel.getMonth()) break;
     const ag = sortAgenda(dayAgenda(d).filter(e => e.it.status !== 'cancelled' && !e.cont), 'time');
     cells += `<div class="m-cell ${dd.getMonth() !== sel.getMonth() ? 'out' : ''} ${d === td ? 'today' : ''}" onclick="S.selDate='${d}';S.calView='day';S.scrollCal=true;render()">
-      <div class="m-num">${dd.getDate()}</div>${ag.slice(0, 3).map(e => `<div class="m-ev" style="--c:${catOf(e.it).color}">${e.subs ? '↳ ' + esc(e.subs[0].text) : esc(e.it.title)}</div>`).join('')}${ag.length > 3 ? `<div class="m-more">+${ag.length - 3}</div>` : ''}</div>`;
+      <div class="m-num">${dd.getDate()}</div>${ag.slice(0, 3).map(e => `<div class="m-ev" style="--c:${kindColor(e.it)}">${e.subs ? '↳ ' + esc(e.subs[0].text) : esc(e.it.title)}</div>`).join('')}${ag.length > 3 ? `<div class="m-more">+${ag.length - 3}</div>` : ''}</div>`;
   }
   return `<div class="month"><div class="m-dow">${[1, 2, 3, 4, 5, 6, 0].map(x => `<span>${D.dow(x)}</span>`).join('')}</div><div class="m-grid">${cells}</div></div>`;
 }
@@ -265,14 +265,15 @@ SCREENS.meeting = () => {
       ${Processing.has(m.id) ? `<div class="ai-box" style="margin-top:8px">${t('AI готовит итоги… Можно пользоваться приложением.')}</div>` : `<button class="btn ${m.transcript ? 'ghost' : 'pri'} full" style="margin-top:8px" onclick="processMeeting('${m.id}')">${ic('ai', 16)} ${m.transcript ? t('Обработать заново') : t('Обработать AI')}</button>`}
       ${m.aiError && !m.summary ? `<div class="hint warn">${esc(m.aiError)}</div>` : ''}
       ${m.summary ? `<button class="btn ghost full" style="margin-top:8px" onclick="speakMeeting('${m.id}')">${ic('play', 16)} ${t('Прослушать итоги')}</button>` : ''}
-      <button class="link" style="margin-top:10px" onclick="meetDelRec('${m.id}')">${t('Удалить запись')}</button></div>`;
+      <button class="btn ghost full" style="margin-top:8px" onclick="meetAudioToTelegram('${m.id}',false,this)">${ic('send', 16)} ${t('Отправить запись в Telegram')}</button><div id="rtg_${m.id}">${recTgStateHtml(m)}</div>
+      <button class="btn danger full" style="margin-top:10px" onclick="deleteFile('${m.id}','rec')">${ic('trash', 16)} ${t('Удалить запись')}</button></div>`;
   }
   if (m.summary || m.transcript) {
     const tabs = [['short', 'Кратко'], ['dec', 'Решения'], ['tasks', 'Задачи'], ['tr', 'Стенограмма']];
     b += sec(t('AI-итоги встречи')) + `<div class="seg">${tabs.map(([k, l]) => `<button class="${S.meetTab === k ? 'on' : ''}" onclick="S.meetTab='${k}';render()">${t(l)}${k === 'tasks' && (m.proposed || []).length ? ' (' + m.proposed.length + ')' : ''}</button>`).join('')}</div><div class="card">${meetTab(m)}</div>`;
     if (m.summary) b += `<button class="btn pri full" onclick="meetToTelegram('${m.id}',false,this)">${ic('send', 16)} ${t('Отправить итоги в Telegram')}</button><div id="tgst_${m.id}">${tgStateHtml(m)}</div>`;
   }
-  const menu = `<button class="tbtn" onclick="meetFav('${m.id}')">${ic(m.fav ? 'starf' : 'star')}</button><button class="tbtn" onclick="openShare('${m.id}')">${ic('share')}</button><button class="tbtn" onclick="openEditor('meeting',{id:'${m.id}'})">${ic('edit')}</button>`;
+  const menu = `<button class="tbtn" onclick="meetFav('${m.id}')">${ic(m.fav ? 'starf' : 'star')}</button><button class="tbtn" onclick="openShare('${m.id}')" aria-label="${esc(t('Поделиться'))}">${ic('share')}</button><button class="tbtn" onclick="openItemPdf('${m.id}')" aria-label="PDF">${ic('pdf')}</button><button class="tbtn" onclick="openEditor('meeting',{id:'${m.id}'})" aria-label="${esc(t('Изменить'))}">${ic('edit')}</button><button class="tbtn" style="color:var(--red)" onclick="deleteItemFull('${m.id}')" aria-label="${esc(t('Удалить'))}">${ic('trash')}</button>`;
   return {
     top: titleTop(t('Встреча'), { extra: menu }), body: b,
     after: async () => {
@@ -300,10 +301,7 @@ function meetTab(m) {
 async function meetAddPerson(id) { const m = getItem(id); const cid = await pickContact(m.contactIds || []); if (!cid) return; const c = getItem(cid); m.contactIds = Array.from(new Set((m.contactIds || []).concat(cid))); m.participants = Array.from(new Set((m.participants || []).concat(c.title))); await saveItem(m); }
 async function meetAddFiles(id, inp) { const m = getItem(id); for (const f of inp.files) m.files.push(await storeFile(f)); inp.value = ''; await saveItem(m); toast(t('Файлы добавлены')); }
 async function meetFav(id) { const m = getItem(id); m.fav = !m.fav; await saveItem(m); toast(m.fav ? t('В избранном ★') : t('Убрано из избранного')); }
-async function meetDelRec(id) {
-  const m = getItem(id); if (!(await confirmDel(t('Удалить запись встречи?')))) return;
-  await DB.del('files', m.recording.fileId); m.recording = null; await saveItem(m); toast(t('Запись удалена'));
-}
+async function meetDelRec(id) { await deleteFile(id, 'rec'); }
 /* where the summary went: shown right under the button, so it is never a mystery */
 function tgStateHtml(m) {
   const bot = cfg.bot, chat = bot ? `<a href="https://t.me/${esc(bot)}" target="_blank" rel="noopener">${t('Открыть чат с ботом')} @${esc(bot)}</a>` : '';
@@ -338,7 +336,8 @@ SCREENS.recordings = () => {
   let b = `<div class="hint">${t('Записи хранятся внутри приложения (и в облаке, если вы вошли). Отсюда их можно прослушать, отправить в Telegram/WhatsApp или сохранить в телефон (папка «Загрузки»).')}</div>`;
   b += rs.length ? rs.map(m => `<div class="card"><div style="display:flex;align-items:center;gap:10px"><span class="ficon" style="background:#f59e0b">${ic('rec', 16)}</span><div style="flex:1;min-width:0"><b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(m.title)}</b><span class="muted" style="font-size:12px">${esc(m.date ? D.human(m.date) : '')} · ${fmtDur(m.recording.duration || 0)} · ${mb(m.recording.size)}${m.transcript ? ' · ' + t('есть стенограмма') : ''}</span></div>${m.recording.fav ? `<span style="color:var(--ylw)">${ic('starf', 16)}</span>` : ''}</div>
     <div data-audio="${m.id}" style="margin-top:8px"><button class="link" onclick="loadAudio('${m.id}')">${ic('play', 14)} ${t('Прослушать')}</button></div>
-    <div class="btns" style="margin-top:8px"><button class="btn ghost" onclick="shareRec('${m.id}')">${ic('share', 16)} ${t('Поделиться')}</button><button class="btn ghost" onclick="saveRec('${m.id}')">${ic('download', 16)} ${t('В телефон')}</button><button class="btn ghost" onclick="go('meeting','${m.id}')">${ic('ai', 16)} ${t('Итоги')}</button></div></div>`).join('') : emptyBox('🎙', t('Записей пока нет. Нажмите «Запись» на главном экране или «Начать запись» во встрече.'));
+    <div class="btns" style="margin-top:8px"><button class="btn ghost" onclick="shareRec('${m.id}')">${ic('share', 16)} ${t('Поделиться')}</button><button class="btn ghost" onclick="saveRec('${m.id}')">${ic('download', 16)} ${t('В телефон')}</button><button class="btn ghost" onclick="go('meeting','${m.id}')">${ic('ai', 16)} ${t('Итоги')}</button></div>
+    <div class="btns" style="margin-top:8px"><button class="btn ghost" onclick="meetAudioToTelegram('${m.id}',false,this)">${ic('send', 16)} Telegram</button><button class="btn danger" onclick="deleteFile('${m.id}','rec')">${ic('trash', 16)} ${t('Удалить')}</button></div><div id="rtg_${m.id}">${recTgStateHtml(m)}</div></div>`).join('') : emptyBox('🎙', t('Записей пока нет. Нажмите «Запись» на главном экране или «Начать запись» во встрече.'));
   return { top: titleTop(t('Записи')), body: b, dock: fab('quickRecord()') };
 };
 async function loadAudio(id) { const b = await recBlob(id); const box = $(`[data-audio="${id}"]`); if (b && box) box.innerHTML = `<audio controls autoplay style="width:100%" src="${URL.createObjectURL(b)}"></audio>`; }
@@ -379,7 +378,7 @@ function docsListHTML() {
   const q = (S.docQ || '').toLowerCase(), fl = S.docFilter;
   const xs = allFiles().filter(({ f, it }) => (fl === 'all' || fileKind(f)[2] === fl) && (!q || (f.name + ' ' + it.title).toLowerCase().includes(q)));
   if (!xs.length) return emptyBox('📁', t('Документов нет. Прикрепляйте их к задачам и встречам или загрузите здесь'));
-  return `<div class="list" style="padding:0 12px">${xs.map(({ f, it }) => `<div class="frow" onclick="openFile('${it.id}','${f.isRec ? 'rec' : f.id}')">${ficon(f)}<div class="fm"><b>${esc(f.name)}</b><span>${mb(f.size)} · ${esc(D.human((f.added || it.updated || '').slice(0, 10) || D.today()))} · ${esc(it.title.slice(0, 40))}</span></div>${f.fav ? `<span style="color:var(--ylw)">${ic('starf', 16)}</span>` : ''}</div>`).join('')}</div>`;
+  return `<div class="list" style="padding:0 12px">${xs.map(({ f, it }) => `<div class="frow" onclick="openFile('${it.id}','${f.isRec ? 'rec' : f.id}')">${ficon(f)}<div class="fm"><b>${esc(f.name)}</b><span>${mb(f.size)} · ${esc(D.human((f.added || it.updated || '').slice(0, 10) || D.today()))} · ${esc(it.title.slice(0, 40))}</span></div>${f.fav ? `<span style="color:var(--ylw)">${ic('starf', 16)}</span>` : ''}<button class="row-menu del" onclick="event.stopPropagation();deleteFile('${it.id}','${f.isRec ? 'rec' : f.id}')" aria-label="${esc(t('Удалить'))}">${ic('trash', 17)}</button></div>`).join('')}</div>`;
 }
 SCREENS.docs = () => {
   const fl = [['all', 'Все'], ['pdf', 'PDF'], ['docx', 'DOCX'], ['xlsx', 'XLSX'], ['img', 'Изображения'], ['audio', 'Аудио'], ['other', 'Другое']];
@@ -469,6 +468,7 @@ SCREENS.settings = () => {
     <div class="sw-row"><div><b>${t('Незаметная запись')}</b><span>${t('Во время записи на экране нет большого окна записи — только маленькая точка в углу. Значок микрофона Android в строке состояния скрыть нельзя.')}</span></div><button class="sw ${st.recDiscreet ? 'on' : ''}" onclick="setVal('recDiscreet',!S.set.recDiscreet);render()"></button></div>
     <div class="sw-row"><div><b>${t('AI-итоги сразу после записи')}</b><span>${t('Стенограмма, итоги, задачи и встречи по датам — без вопросов')}</span></div><button class="sw ${st.autoAI ? 'on' : ''}" onclick="setVal('autoAI',!S.set.autoAI);render()"></button></div>
     <div class="sw-row"><div><b>${t('Присылать итоги в Telegram')}</b><span>${t('Если Telegram подключён')}</span></div><button class="sw ${st.sendSummaryTg ? 'on' : ''}" onclick="setVal('sendSummaryTg',!S.set.sendSummaryTg);render()"></button></div>
+    <div class="sw-row"><div><b>${t('Присылать аудиозапись в Telegram')}</b><span>${t('Сразу после итогов, в тот же чат с ботом (запись до 50 МБ ≈ 1 ч 40 мин в высоком качестве)')}</span></div><button class="sw ${st.sendAudioTg ? 'on' : ''}" onclick="setVal('sendAudioTg',!S.set.sendAudioTg);render()"></button></div>
     <div class="hint">${NATIVE ? t('Запись ведёт само Android-приложение: она начнётся по расписанию, даже если телефон заблокирован, и остановится сама.') : t('Чтобы автозапись не спрашивала разрешение: в Chrome нажмите значок слева от адреса → «Разрешения» → Микрофон → «Разрешить».') + ' ' + t('Запись на заблокированном телефоне без единого нажатия — только в Android-приложении MARKUS-A.')}</div></div>`;
   if (NATIVE) b += `<div id="nativeSec"></div>` + sec(t('Android-приложение')) + nativeSettingsCard();
   b += sec(t('AI-помощник')) + `<div class="set-card"><label class="lbl">${t('Ключ Google Gemini (бесплатный)')}</label><input class="inp" type="password" value="${esc(st.aiKey)}" placeholder="AIza… / AQ.…" onchange="setVal('aiKey',this.value.trim());Cloud.user&&Cloud.saveProfile({ai_key:this.value.trim()||null});render()">
@@ -503,7 +503,7 @@ SCREENS.settings = () => {
     <div class="btns"><button class="btn ghost" onclick="freePhoneMemory()">${t('Освободить память телефона')}</button></div></div>`;
   b += sec(t('Данные')) + `<div class="set-card"><div class="hint" style="margin-top:12px">${t('Резервная копия задач, встреч, контактов и заметок (без файлов).')}</div><div class="btns"><button class="btn ghost" onclick="exportBackup()">${ic('download', 16)} ${t('Скачать копию')}</button><label class="btn ghost">${t('Загрузить копию')}<input type="file" accept=".json,application/json" hidden onchange="importBackup(this.files[0])"></label></div>
     ${window._installPrompt ? `<div class="btns"><button class="btn pri" onclick="installApp()">${t('Установить приложение')}</button></div>` : ''}</div>`;
-  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 3.3</div>`;
+  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 3.4</div>`;
   return { top: titleTop(t('Настройки')), body: b, after: async () => { const i = await storageInfo(); const el = $('#st_info'); if (el) el.textContent = t('Занято на телефоне: {a} · файлов: {n}, из них в облаке: {c}', { a: mb(i.used), n: i.n, c: i.cloud }); } };
 };
 async function testAI() { try { toast(t('Проверяю…')); const r = await AI.call([{ text: 'Reply with one word in ' + langName() + ': works' }]); toast(t('AI отвечает: {r} ✓', { r: r.slice(0, 40) }), 3000); } catch (e) { toast(e.message, 5000); } }

@@ -96,7 +96,7 @@ const DEFAULTS = {
   homeSort: 'time', homeLimit: 6, defaultRemind: [30],
   aiKey: '', aiModel: 'gemini-2.5-flash', voiceReply: true, autoTasks: 'auto',
   autoRecDefault: true, recPre: 2, recPost: 30, recDiscreet: true, autoAI: true, recMaxMin: 180,
-  sendSummaryTg: true, cloudOnly: false, speechRate: 1, recQuality: 'high', recMode: 'auto',
+  sendSummaryTg: true, cloudOnly: false, speechRate: 1, recQuality: 'high', recMode: 'auto', sendAudioTg: true,
   sbUrl: '', sbKey: '', botName: '',
   categories: DEFAULT_CATS, noteCats: DEFAULT_NOTE_CATS,
   myCard: {

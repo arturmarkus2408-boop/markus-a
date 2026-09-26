@@ -1,6 +1,7 @@
 'use strict';
 /* ================= icons ================= */
 const ICONS = {
+  dots: '<circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/>',
   home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/>',
   calendar: '<rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M16 2.5v4M8 2.5v4M3 10h18"/>',
   check: '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="m8 12 3 3 5-6"/>',
@@ -140,9 +141,10 @@ function row(it, o = {}) {
   if (o.cont) tcol = `<div class="row-time"><span>${t('до')}</span>${esc(D.short(spanEnd(it)))}</div>`;
   const ns = !done && it.status !== 'cancelled' && (it.subtasks || []).length ? nextSub(it) : null;
   const sub = [
+    o.resched ? '' : `<span class="cat sm" style="--t:${c.color}">${esc(catName(c))}</span>`,
     statusTag(it),
     it.priority !== 'normal' ? `<span class="tag" style="--t:${PRIO[it.priority].c}">${t(PRIO[it.priority].l)}</span>` : '',
-    (it.subtasks || []).length || it.status === 'cancelled' ? pbar(p, it.status === 'cancelled') : '',
+    ((it.subtasks || []).length && p > 0) || it.status === 'cancelled' ? pbar(p, it.status === 'cancelled') : '',
     it.kind === 'meeting' && it.recording ? `<span class="mini">${ic('rec', 12)}</span>` : '',
     (it.files || []).length ? `<span class="mini">${ic('clip', 12)}${it.files.length}</span>` : '',
     it.repeat && it.repeat.type !== 'none' ? `<span class="mini">${ic('repeat', 12)}</span>` : '',
@@ -150,21 +152,22 @@ function row(it, o = {}) {
   ].join('');
   const next = ns ? `<div class="row-next">${t('Далее')}: ${esc(ns.text)}${ns.due ? ' · ' + esc(D.human(ns.due)) : ''}</div>` : '';
   const why = it.status === 'cancelled' && it.cancelReason ? `<div class="row-next">${t('Причина')}: ${esc(it.cancelReason)}</div>` : '';
-  return `<div class="row ${done ? 'done' : ''} ${it.status === 'cancelled' ? 'cancel' : ''}" data-open="${it.id}">
+  return `<div class="row ${done ? 'done' : ''} ${it.status === 'cancelled' ? 'cancel' : ''}" style="--k:${typeof kindColor === 'function' ? kindColor(it) : c.color}" data-open="${it.id}">
     <button class="chk ${done ? 'on' : ''}" style="--c:${c.color}" data-toggle="${it.id}" aria-label="${esc(t('Отметить выполненной'))}">${done ? ic('checkmark', 13) : ''}</button>
     ${tcol}
     <div class="row-main"><div class="row-title">${it.kind === 'meeting' ? ic('users', 14) + ' ' : ''}${esc(it.title)}</div><div class="row-sub">${sub}</div>${next}${why}</div>
-    ${o.resched ? `<button class="rs-btn" data-resched="${it.id}">${t('Перенести')}</button>` : `<span class="cat" style="--t:${c.color}">${esc(catName(c))}</span>`}
+    ${o.resched ? `<button class="rs-btn" data-resched="${it.id}">${t('Перенести')}</button>` : ''}
+    <button class="row-menu" data-menu="${it.id}" aria-label="${esc(t('Действия'))}">${ic('dots', 18)}</button>
   </div>`;
 }
 function subRow(it, s) {
   const c = catOf(it), p = progress(it);
   const od = s.due && subDueAt(s) < Date.now();
-  return `<div class="row" data-open="${it.id}">
+  return `<div class="row" style="--k:${typeof kindColor === 'function' ? kindColor(it) : c.color}" data-open="${it.id}">
     <button class="chk sq" style="--c:${c.color}" data-subdone="${it.id}|${s.id}" aria-label="${esc(t('Отметить выполненной'))}"></button>
     <div class="row-time">${s.time || `<span>${t('подзадача')}</span>`}</div>
     <div class="row-main"><div class="row-title">↳ ${esc(s.text)}</div><div class="row-sub">${od ? `<span class="tag red">${t('Просрочено')}</span>` : ''}<span class="mini">${t('из задачи')} «${esc(it.title)}»</span>${pbar(p)}</div></div>
-    <span class="cat" style="--t:${c.color}">${esc(catName(c))}</span></div>`;
+    <button class="row-menu" data-menu="${it.id}" aria-label="${esc(t('Действия'))}">${ic('dots', 18)}</button></div>`;
 }
 function agendaRows(entries, o = {}) {
   return entries.map(e => e.subs ? e.subs.map(s => subRow(e.it, s)).join('') : row(e.it, Object.assign({}, o, { cont: e.cont }))).join('');
@@ -214,8 +217,9 @@ function render() {
   if (r.after) r.after();
 }
 document.addEventListener('click', e => {
-  const x = e.target.closest('[data-toggle],[data-resched],[data-subdone],[data-open]');
+  const x = e.target.closest('[data-menu],[data-toggle],[data-resched],[data-subdone],[data-open]');
   if (!x) return;
+  if (x.dataset.menu) { e.stopPropagation(); itemMenu(x.dataset.menu); return; }
   if (x.dataset.toggle) { e.stopPropagation(); toggleDone(x.dataset.toggle); return; }
   if (x.dataset.resched) { e.stopPropagation(); smartReschedule(x.dataset.resched); return; }
   if (x.dataset.subdone) { e.stopPropagation(); const [a, b] = x.dataset.subdone.split('|'); subToggle(a, b); return; }
@@ -438,9 +442,8 @@ async function edCollect() {
   return true;
 }
 async function edDelete() {
-  if (!(await confirmDel(t('Удалить «{x}»?', { x: E.title })))) return;
-  const it = getItem(E.id); if (it) await deleteItem(it);
-  closeAllSheets(); toast(t('Удалено')); if (S.route === 'meeting') goBack();
+  if (!getItem(E.id)) { closeAllSheets(); return; }
+  await deleteItemFull(E.id);
 }
 
 /* ================= task detail ================= */
@@ -458,6 +461,9 @@ function renderTaskDetail(id, sh) {
   const se = spanEnd(it);
   box.innerHTML = `
     <div class="sh-h"><span class="cat" style="--t:${c.color}">${esc(catName(c))}</span><span style="flex:1"></span>
+      <button class="xbtn" onclick="closeSheet();openEditor('${it.kind}',{id:'${id}'})" aria-label="${esc(t('Изменить'))}">${ic('edit', 18)}</button>
+      <button class="xbtn" onclick="openItemPdf('${id}')" aria-label="PDF">${ic('pdf', 18)}</button>
+      <button class="xbtn" style="color:var(--red)" onclick="tdDelete('${id}')" aria-label="${esc(t('Удалить'))}">${ic('trash', 18)}</button>
       <button class="xbtn" onclick="favToggle('${id}')">${ic(it.fav ? 'starf' : 'star', 18)}</button>
       <button class="xbtn" onclick="closeSheet()" aria-label="${esc(t('Закрыть'))}">${ic('x', 18)}</button></div>
     <div style="font-size:21px;font-weight:800;line-height:1.25;margin-bottom:8px">${esc(it.title)}</div>
@@ -482,7 +488,7 @@ function renderTaskDetail(id, sh) {
     ${(it.files || []).length ? `<div class="h4">${t('Документы')}</div>${attList(it.files, id, false)}` : ''}
     ${(it.links || []).length ? `<div class="h4">${t('Ссылки')}</div>${linksBlock(it)}` : ''}
     ${resultBlock(it)}
-    <div class="sh-foot"><button class="btn ghost" onclick="openShare('${id}')" aria-label="${esc(t('Поделиться'))}">${ic('share', 18)}</button><button class="btn ghost" style="flex:1" onclick="closeSheet();openEditor('${it.kind}',{id:'${id}'})">${ic('edit', 18)} ${t('Изменить')}</button><button class="btn danger" onclick="tdDelete('${id}')">${ic('trash', 18)}</button></div>`;
+    <div class="sh-foot"><button class="btn ghost" onclick="openShare('${id}')" aria-label="${esc(t('Поделиться'))}">${ic('share', 18)}</button><button class="btn ghost" onclick="openItemPdf('${id}')" aria-label="PDF">${ic('pdf', 18)}</button><button class="btn ghost" style="flex:1" onclick="closeSheet();openEditor('${it.kind}',{id:'${id}'})">${ic('edit', 18)} ${t('Изменить')}</button><button class="btn danger" onclick="tdDelete('${id}')">${ic('trash', 18)}</button></div>`;
   loadThumbs(box);
 }
 function linkify(s) { return esc(s).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>'); }
@@ -508,7 +514,7 @@ async function tdStatus(id, st) {
 }
 async function tdAddSub(id) { const it = getItem(id); if (await openSubEditor(it, null)) { await saveItem(it); refreshDetail(id); } }
 async function tdEditSub(id, sid) { const it = getItem(id); if (await openSubEditor(it, sid)) { await saveItem(it); refreshDetail(id); } }
-async function tdDelete(id) { const it = getItem(id); if (!(await confirmDel(t('Удалить «{x}»?', { x: it.title })))) return; await deleteItem(it); closeAllSheets(); toast(t('Удалено')); }
+async function tdDelete(id) { await deleteItemFull(id); }
 async function favToggle(id) { const it = getItem(id); it.fav = !it.fav; await saveItem(it); refreshDetail(id); toast(it.fav ? t('В избранном ★') : t('Убрано из избранного')); }
 
 /* ================= note editor ================= */
@@ -577,6 +583,7 @@ async function openFile(holderId, fileId) {
     <div class="btns" style="margin-top:8px"><button class="btn ghost" id="f_dl">${ic('download', 18)} ${t('Сохранить в телефон')}</button>${f.isRec ? '' : `<button class="btn ghost" id="f_fav">${ic(f.fav ? 'starf' : 'star', 18)}</button>`}</div>
     <div class="btns" style="margin-top:8px"><button class="btn ghost" id="f_sum">${ic('ai', 16)} ${t('Кратко (AI)')}</button><button class="btn ghost" id="f_ask">${ic('ai', 16)} ${t('Спросить')}</button></div>
     <div id="f_ai"></div>
+    <button class="btn danger full" style="margin-top:8px" onclick="deleteFile('${it.id}','${f.isRec ? 'rec' : f.id}')">${ic('trash', 18)} ${t('Удалить файл')}</button>
     ${it.kind !== 'note' || it.noteCat !== 'Документы' ? `<button class="btn ghost full" style="margin-top:8px" onclick="closeAllSheets();openItem('${it.id}')">${t('Перейти')}: ${esc(it.title.slice(0, 40))}</button>` : ''}
   `);
   const blob = await getFileBlob(f);
