@@ -48,7 +48,7 @@ function tick() {
     // auto-record: starts by itself N minutes before the start and runs until the end + N minutes.
     // A website may use the microphone only while it is open on the screen; otherwise a notification
     // (and the Telegram bot) brings a «start recording» button — one tap.
-    if (it.kind === 'meeting' && it.autoRecord && !it.recording && it.date === D.today() && it.start && !Rec.active && !autoTried.has(it.id)) {
+    if (it.kind === 'meeting' && it.autoRecord && S.set.recHere !== false && !it.recording && it.date === D.today() && it.start && !Rec.active && !autoTried.has(it.id)) {
       const st = startAt(it).getTime() - (+S.set.recPre || 0) * 60000;
       const until = D.dt(it.date, it.end || D.addMin(it.start, S.set.defaultDur || 60)).getTime() + (+S.set.recPost || 0) * 60000;
       if (now >= st && now < until) {

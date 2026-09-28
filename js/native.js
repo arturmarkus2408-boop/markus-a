@@ -114,7 +114,7 @@ function nativeSync() {
   const now = Date.now(), lim = now + 31 * 86400000, recs = [], rem = [];
   for (const it of S.items) {
     if (it.deleted || !isOpen(it)) continue;
-    if (it.kind === 'meeting' && it.autoRecord && !it.recording && it.date && it.start) {
+    if (it.kind === 'meeting' && it.autoRecord && S.set.recHere !== false && !it.recording && it.date && it.start) {   // only the phone chosen for recording
       const start = startAt(it).getTime() - (+S.set.recPre || 0) * 60000;
       const stop = D.dt(it.date, it.end || D.addMin(it.start, S.set.defaultDur || 60)).getTime() + (+S.set.recPost || 0) * 60000;
       if (stop > now && start < lim) recs.push({ id: it.id, title: it.title || '', start, stop: Math.min(stop, start + (+S.set.recMaxMin || 180) * 60000 + 6 * 3600000) });

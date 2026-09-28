@@ -36,3 +36,9 @@ Object.assign(window.I18N_DICT.en, {"Фиолетовая": "Violet", "Неон"
 Object.assign(window.I18N_DICT.uz, {"Фиолетовая": "Binafsha", "Неон": "Neon", "Олива": "Zaytun", "Океан": "Okean"});
 Object.assign(window.I18N_DICT.tr, {"Фиолетовая": "Mor", "Неон": "Neon", "Олива": "Zeytin", "Океан": "Okyanus"});
 Object.assign(window.I18N_DICT.de, {"Фиолетовая": "Violett", "Неон": "Neon", "Олива": "Oliv", "Океан": "Ozean"});
+
+/* v3.6 */
+Object.assign(window.I18N_DICT.en, {"Автозапись на этом телефоне": "Auto-recording on this phone", "Если MARKUS-A стоит на двух телефонах, оставьте включённым только на том, который берёте на встречи — иначе встреча запишется дважды.": "If MARKUS-A is on two phones, keep this on only on the phone you take to meetings — otherwise the meeting will be recorded twice."});
+Object.assign(window.I18N_DICT.uz, {"Автозапись на этом телефоне": "Shu telefonda avtoyozuv", "Если MARKUS-A стоит на двух телефонах, оставьте включённым только на том, который берёте на встречи — иначе встреча запишется дважды.": "Agar MARKUS-A ikki telefonda bo‘lsa, faqat uchrashuvga olib boradigan telefonda yoqilgan qoldiring — aks holda uchrashuv ikki marta yoziladi."});
+Object.assign(window.I18N_DICT.tr, {"Автозапись на этом телефоне": "Bu telefonda otomatik kayıt", "Если MARKUS-A стоит на двух телефонах, оставьте включённым только на том, который берёте на встречи — иначе встреча запишется дважды.": "MARKUS-A iki telefondaysa, yalnızca toplantılara götürdüğünüz telefonda açık bırakın — aksi halde toplantı iki kez kaydedilir."});
+Object.assign(window.I18N_DICT.de, {"Автозапись на этом телефоне": "Auto-Aufnahme auf diesem Telefon", "Если MARKUS-A стоит на двух телефонах, оставьте включённым только на том, который берёте на встречи — иначе встреча запишется дважды.": "Ist MARKUS-A auf zwei Telefonen, lassen Sie dies nur auf dem Telefon an, das Sie zu Terminen mitnehmen — sonst wird der Termin doppelt aufgenommen."});
