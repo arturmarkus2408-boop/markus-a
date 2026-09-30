@@ -53,6 +53,13 @@ function mapLinks(p) {
   if (p.url && !L.some(x => x[1] === p.url)) L.unshift([t('Ссылка'), p.url]);
   return L;
 }
+/* v3.8: on the phone — open the point in an offline map (Organic Maps, Maps.me, OsmAnd, Google Maps offline…):
+   works abroad without internet if the country's map was downloaded in advance */
+function offlineMapChip(p) {
+  const g = placeGeo(p); if (!g || !(typeof isPhone === 'function' && isPhone())) return '';
+  const la = g.lat.toFixed(6), lo = g.lng.toFixed(6);
+  return `<a class="chip" href="geo:${la},${lo}?q=${la},${lo}(${encodeURIComponent(placeTitle(p))})" rel="noopener">${ic('pin', 13)} ${t('Офлайн-карта')}</a>`;
+}
 function placeTitle(p) { const g = placeGeo(p); return p.name || p.address || (g ? g.lat.toFixed(5) + ', ' + g.lng.toFixed(5) : '') || (p.url ? p.url.replace(/^https?:\/\//, '').slice(0, 40) : t('Место')); }
 function placeShareText(p, it) {
   const lines = ['📍 ' + placeTitle(p)];
@@ -81,7 +88,7 @@ function placesBlock(it, o = {}) {
     return `<div class="place">
       <div class="place-h">${ic('pin', 18)}<div style="flex:1;min-width:0"><b>${esc(placeTitle(p))}</b>${p.address && p.address !== placeTitle(p) ? `<span>${esc(p.address)}</span>` : ''}${p.note ? `<span class="place-n">${esc(p.note)}</span>` : ''}</div></div>
       ${(p.photos || []).length ? `<div class="thumbs">${p.photos.map(f => `<button class="thumb" data-ph="${it.id}|${f.id}" onclick="openFile('${it.id}','${f.id}')" aria-label="${esc(f.name)}"></button>`).join('')}</div>` : ''}
-      <div class="chips wrapchips" style="margin:8px 0 0">${mapLinks(p).map(([n, u]) => `<a class="chip" href="${esc(u)}" target="_blank" rel="noopener">${ic('globe', 13)} ${esc(n)}</a>`).join('')}</div>
+      <div class="chips wrapchips" style="margin:8px 0 0">${mapLinks(p).map(([n, u]) => `<a class="chip" href="${esc(u)}" target="_blank" rel="noopener">${ic('globe', 13)} ${esc(n)}</a>`).join('')}${offlineMapChip(p)}</div>
       <div class="btns" style="margin-top:8px"><button class="btn ghost" onclick="sharePlace('${it.id}','${p.id}')">${ic('share', 16)} ${t('Отправить партнёру')}</button>${g && tg ? `<button class="btn ghost" onclick="placeToTelegram('${it.id}','${p.id}',this)">${ic('tg', 16)} ${t('Точкой в Telegram')}</button>` : ''}</div>
     </div>`;
   }).join('') + (o.after || '');

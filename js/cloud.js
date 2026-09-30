@@ -89,6 +89,10 @@ const Cloud = {
     Cloud.profile = data || null;
     if (Cloud.profile && Cloud.profile.ai_key && !S.set.aiKey) { S.set.aiKey = Cloud.profile.ai_key; saveSettings(); }
     if (Cloud.profile && !Cloud.profile.ai_key && S.set.aiKey) Cloud.saveProfile({ ai_key: S.set.aiKey });
+    // your name (for greetings and to recognise you in recordings) is the same on every device
+    const pf = (Cloud.profile && Cloud.profile.prefs) || {};
+    const looksMail = x => /@/.test(x || '');
+    if (pf.name && (!S.set.name || looksMail(S.set.name))) { S.set.name = pf.name; if (pf.aliases && !S.set.aliases) S.set.aliases = pf.aliases; saveSettings(); }
     Cloud.savePrefs();
   },
   async saveProfile(patch) {
@@ -102,7 +106,7 @@ const Cloud = {
     clearTimeout(Cloud._pt);
     Cloud._pt = setTimeout(async () => {
       if (!Cloud.user || !Cloud.sb) return;
-      const st = S.set, prefs = { morningTime: st.morningTime, eveTime: st.eveTime, dayEnd: st.dayEnd, nagHours: st.nagHours, lang: st.lang, recPre: st.recPre };
+      const st = S.set, prefs = { morningTime: st.morningTime, eveTime: st.eveTime, dayEnd: st.dayEnd, nagHours: st.nagHours, lang: st.lang, recPre: st.recPre, name: st.name || '', aliases: st.aliases || '', coach: st.coach !== false };
       const err = await Cloud.saveProfile({ prefs, lang: st.lang });
       if (err) await Cloud.saveProfile({ lang: st.lang }).catch(() => { }); // migration not run yet — ignore
     }, 800);
@@ -160,14 +164,24 @@ const Cloud = {
           await Cloud.uploadFile(rf); it.recording.cloud = rf.cloud; if (rf.parts) it.recording.parts = rf.parts; if (rf.cloudErr) it.recording.cloudErr = rf.cloudErr; else delete it.recording.cloudErr;
         }
       }
+      // v3.8: one bad record must never stop the whole exchange — before, a single failed row
+      // silently blocked both sending AND receiving, so the phone and the computer drifted apart
+      let pushErr = '';
       if (dirty.length) {
-        const rows = dirty.map(i => Cloud.row(i));
+        const rows = dirty.map(i => Cloud.row(i)), okIds = new Set();
         for (let k = 0; k < rows.length; k += 100) {
-          const { error } = await Cloud.sb.from('items').upsert(rows.slice(k, k + 100));
-          if (error) throw error;
+          const chunk = rows.slice(k, k + 100);
+          const { error } = await Cloud.sb.from('items').upsert(chunk);
+          if (!error) { chunk.forEach(r => okIds.add(r.id)); continue; }
+          for (const r of chunk) {   // find the one that fails, send the rest
+            const { error: e1 } = await Cloud.sb.from('items').upsert([r]);
+            if (e1) { pushErr = (r.data && r.data.title ? '«' + String(r.data.title).slice(0, 40) + '»: ' : '') + (e1.message || String(e1)); }
+            else okIds.add(r.id);
+          }
         }
-        for (const it of dirty) { const cur = getItem(it.id); if (cur && cur.updated === it.updated) { delete cur._dirty; await DB.put('items', cur); } }
+        for (const it of dirty) { const cur = getItem(it.id); if (okIds.has(it.id) && cur && cur.updated === it.updated) { delete cur._dirty; await DB.put('items', cur); } }
       }
+      Cloud.pending = S.items.filter(i => i._dirty).length;
       let since = (await DB.get('meta', 'lastPull')) || '1970-01-01T00:00:00+00:00', changed = false;
       for (let page = 0; page < 20; page++) {
         const { data, error } = await Cloud.sb.from('items').select('id,data,deleted,server_ts').gt('server_ts', since).order('server_ts', { ascending: true }).limit(500);
@@ -188,13 +202,13 @@ const Cloud = {
         if (data.length < 500) break;
       }
       await DB.put('meta', since, 'lastPull');
-      Cloud.lastSync = new Date(); Cloud.lastError = '';
-      if (changed) queueRender();
-      if (verbose) toast(t('Синхронизировано ✓'));
+      Cloud.lastSync = new Date(); Cloud.lastError = pushErr ? t('не отправлено') + ' — ' + pushErr : '';
+      if (changed) queueRender(); else if (S.route === 'home') updateSyncChip();
+      if (verbose) toast(pushErr ? t('Ошибка синхронизации') + ': ' + Cloud.lastError : t('Синхронизировано ✓'), pushErr ? 6000 : 2000);
     } catch (e) {
       Cloud.lastError = e.message || String(e);
       if (verbose) toast(t('Ошибка синхронизации') + ': ' + Cloud.lastError, 4000);
-    } finally { Cloud.busy = false; }
+    } finally { Cloud.busy = false; updateSyncChip(); }
   },
 
   /* ---------- telegram ---------- */

@@ -11,7 +11,7 @@ function contactLinks(c) {
   if (c.phone) L.push({ i: 'phone', l: t('Позвонить'), u: 'tel:' + digits(c.phone) });
   const wa = digits(c.whatsapp || c.phone).replace('+', '');
   if (c.whatsapp || c.phone) L.push({ i: 'wa', l: 'WhatsApp', u: 'https://wa.me/' + wa });
-  if (c.telegram) L.push({ i: 'tg', l: 'Telegram', u: /^\+?\d{7,}$/.test(digits(c.telegram)) && !/[a-z_]/i.test(c.telegram) ? 'https://t.me/' + digits(c.telegram) : 'https://t.me/' + tgUser(c.telegram) });
+  if (c.telegram) L.push({ i: 'tg', l: 'Telegram', u: tgLink(c.telegram) });
   if (c.email) L.push({ i: 'mail', l: 'Email', u: 'mailto:' + c.email });
   return L;
 }
@@ -20,16 +20,19 @@ function openContact(id) {
   const c = getItem(id); if (!c) return;
   const ms = contactMeetings(id);
   openSheet(`
-    <div class="sh-h"><span class="pav" style="width:44px;height:44px;font-size:17px">${esc((c.title || '?')[0].toUpperCase())}</span><div style="flex:1;min-width:0"><b style="font-size:17px">${esc(c.title)}</b>${c.company ? `<div class="muted" style="font-size:13px">${esc(c.company)}</div>` : ''}</div><button class="xbtn" onclick="closeSheet()">${ic('x', 18)}</button></div>
-    <div class="btns">${contactLinks(c).map(l => `<a class="btn ghost" href="${esc(l.u)}" target="_blank" rel="noopener">${ic(l.i, 18)} ${esc(l.l)}</a>`).join('') || `<div class="hint">${t('Контактов пока нет — нажмите «Изменить»')}</div>`}</div>
+    <div class="sh-h">${c.avatar ? `<span onclick="viewAvatar('${c.id}')" style="cursor:zoom-in">${avatarHtml(c, 56)}</span>` : avatarHtml(c, 48)}<div style="flex:1;min-width:0"><b style="font-size:17px">${esc(c.title)}</b>${c.company ? `<div class="muted" style="font-size:13px">${esc(c.company)}</div>` : ''}</div><button class="xbtn" onclick="closeSheet()">${ic('x', 18)}</button></div>
+    <div class="c-acts">${contactLinks(c).map(l => `<a class="c-act" href="${esc(l.u)}" target="${l.i === 'phone' || l.i === 'mail' ? '_self' : '_blank'}" rel="noopener">${ic(l.i, 22)}<span>${esc(l.l)}</span></a>`).join('')}<button class="c-act" onclick="contactCommand('${c.id}')">${ic('mic', 22)}<span>${t('Команда')}</span></button><button class="c-act" onclick="speakContact('${c.id}')">${ic('play', 22)}<span>${t('Озвучить')}</span></button></div>
+    ${contactLinks(c).length ? '' : `<div class="hint">${t('Телефона, Telegram и почты пока нет — нажмите «Изменить»')}</div>`}
     <div class="card" style="margin-top:12px">
-      ${[['phone', 'Телефон', 'tel:' + digits(c.phone || '')], ['whatsapp', 'WhatsApp', 'https://wa.me/' + digits(c.whatsapp || c.phone || '').replace('+', '')], ['telegram', 'Telegram', /^\+?\d{7,}$/.test(digits(c.telegram || '')) && !/[a-z_]/i.test(c.telegram || '') ? 'https://t.me/' + digits(c.telegram || '') : 'https://t.me/' + tgUser(c.telegram || '')], ['email', 'Email', 'mailto:' + (c.email || '')]].filter(([k]) => c[k]).map(([k, l, u]) => `<a class="kv" href="${esc(u)}" target="_blank" rel="noopener" style="text-decoration:none;color:inherit"><b style="min-width:90px">${t(l)}</b><span style="color:var(--acc);word-break:break-all">${esc(c[k])}</span></a>`).join('')}
+      ${[['phone', 'Телефон', 'tel:' + digits(c.phone || '')], ['whatsapp', 'WhatsApp', 'https://wa.me/' + digits(c.whatsapp || c.phone || '').replace('+', '')], ['telegram', 'Telegram', tgLink(c.telegram || '')], ['email', 'Email', 'mailto:' + (c.email || '')]].filter(([k]) => c[k]).map(([k, l, u]) => `<a class="kv" href="${esc(u)}" target="${k === 'phone' || k === 'email' ? '_self' : '_blank'}" rel="noopener" style="text-decoration:none;color:inherit"><b style="min-width:90px">${t(l)}</b><span style="color:var(--acc);word-break:break-all">${esc(c[k])}</span></a>`).join('')}
+      ${c.source ? `<div class="kv"><b style="min-width:90px">${t('Откуда')}</b><span>${esc(c.source)}</span></div>` : ''}
       ${c.desc ? `<div class="pre" style="margin-top:6px">${linkify(c.desc)}</div>` : ''}
     </div>
     ${(c.files || []).length ? `<div class="h4">${t('Документы (паспорт и др.)')}</div>${attList(c.files, c.id, false)}` : ''}
     ${ms.length ? `<div class="h4">${t('Встречи')}</div>${listOf(ms, { showDate: true })}` : ''}
-    <div class="sh-foot"><button class="btn ghost" onclick="shareContact('${id}')">${ic('share', 18)}</button><button class="btn ghost" style="flex:1" onclick="closeSheet();editContact('${id}')">${ic('edit', 18)} ${t('Изменить')}</button></div>`, { cls: 'tall' });
+    <div class="sh-foot"><button class="btn ghost" onclick="shareContact('${id}')" aria-label="vCard">${ic('share', 18)}</button><button class="btn ghost" onclick="contactPdf('${id}')">${ic('pdf', 18)} PDF</button><button class="btn ghost" style="flex:1" onclick="closeSheet();editContact('${id}')">${ic('edit', 18)} ${t('Изменить')}</button></div>`, { cls: 'tall' });
 }
+function viewAvatar(id) { const c = getItem(id); if (c && c.avatar) openSheet(`<div class="sh-h"><b>${esc(c.title)}</b><button class="xbtn" onclick="closeSheet()">${ic('x', 18)}</button></div><img src="${c.avatar}" style="width:100%;border-radius:14px">`); }
 function editContact(id, preset) {
   const ex = id ? getItem(id) : null;
   const C = clone(ex || newItem('contact', preset || {}));
@@ -38,21 +41,23 @@ function editContact(id, preset) {
     let saved = false;
     const sh = openSheet(`
       <div class="sh-h"><b>${ex ? t('Контакт') : t('Новый контакт')}</b><button class="xbtn" onclick="closeSheet()">${ic('x', 18)}</button></div>
+      <div id="c_av" class="av-row"></div>
       <label class="lbl">${t('ФИО')}</label><input class="inp inp-big" id="c_name" value="${esc(C.title)}" placeholder="${esc(t('Фамилия Имя Отчество'))}">
       <label class="lbl">${t('Компания / должность')}</label><input class="inp" id="c_comp" value="${esc(C.company || '')}">
       <div class="g2"><div><label class="lbl">${t('Телефон')}</label><input class="inp" id="c_phone" type="tel" value="${esc(C.phone || '')}" placeholder="+998 …"></div>
       <div><label class="lbl">WhatsApp</label><input class="inp" id="c_wa" type="tel" value="${esc(C.whatsapp || '')}" placeholder="${esc(t('если отличается'))}"></div></div>
       <div class="g2"><div><label class="lbl">Telegram</label><input class="inp" id="c_tg" value="${esc(C.telegram || '')}" placeholder="@username"></div>
       <div><label class="lbl">Email</label><input class="inp" id="c_mail" type="email" value="${esc(C.email || '')}"></div></div>
-      <label class="lbl">${t('Заметки')}</label><textarea class="inp" id="c_desc">${esc(C.desc || '')}</textarea>
+      <label class="lbl">${t('Откуда клиент / как познакомились')}</label><input class="inp" id="c_src" value="${esc(C.source || '')}" placeholder="${esc(t('Например: по рекомендации Азиза; нашёл через Instagram'))}">
+      <label class="lbl">${t('Кратко о клиенте, заметки')}</label><textarea class="inp" id="c_desc">${esc(C.desc || '')}</textarea>
       <label class="lbl">${t('Копия паспорта и другие документы')}</label><div id="e_files"></div>
       <label class="att-add" style="margin-top:8px">${ic('clip', 16)} ${t('Прикрепить фото или файл')}<input type="file" multiple hidden accept="image/*,application/pdf" onchange="edAddFiles(this)"></label>
       <div class="sh-foot">${ex ? `<button class="btn danger" id="c_del">${ic('trash', 18)}</button>` : ''}<button class="btn pri" style="flex:1" id="c_save">${t('Сохранить')}</button></div>`, { cls: 'tall', onClose: () => { if (!saved) res(null); } });
-    edRenderFiles();
+    edRenderFiles(); edRenderAvatar();
     if ($('#c_del', sh)) $('#c_del', sh).onclick = async () => { if (!(await confirmDel(t('Удалить контакт?')))) return; await deleteItem(getItem(C.id)); saved = true; closeAllSheets(); toast(t('Удалено')); res(null); };
     $('#c_save', sh).onclick = async () => {
       C.title = $('#c_name', sh).value.trim(); if (!C.title) return toast(t('Укажите ФИО'));
-      Object.assign(C, { company: $('#c_comp', sh).value.trim(), phone: $('#c_phone', sh).value.trim(), whatsapp: $('#c_wa', sh).value.trim(), telegram: $('#c_tg', sh).value.trim(), email: $('#c_mail', sh).value.trim(), desc: $('#c_desc', sh).value.trim() });
+      Object.assign(C, { company: $('#c_comp', sh).value.trim(), phone: $('#c_phone', sh).value.trim(), whatsapp: $('#c_wa', sh).value.trim(), telegram: $('#c_tg', sh).value.trim(), email: $('#c_mail', sh).value.trim(), source: $('#c_src', sh).value.trim(), desc: $('#c_desc', sh).value.trim() });
       await saveItem(C); saved = true; closeSheet(); toast(t('Сохранено ✓')); res(C.id);
     };
     if (!ex) setTimeout(() => $('#c_name', sh).focus(), 250);
@@ -70,7 +75,7 @@ function pickContact(exclude = []) {
     const draw = () => {
       const q = $('#pc_q', sh).value.toLowerCase();
       const cs = live().filter(c => c.kind === 'contact' && !exclude.includes(c.id) && (!q || (c.title + ' ' + (c.company || '') + ' ' + (c.phone || '')).toLowerCase().includes(q))).sort((a, b) => a.title.localeCompare(b.title));
-      $('#pc_list', sh).innerHTML = cs.length ? `<div class="list">${cs.map(c => `<div class="ncard" data-pc="${c.id}"><span class="pav">${esc(c.title[0].toUpperCase())}</span><div class="nmain"><b>${esc(c.title)}</b><span>${esc([c.company, c.phone].filter(Boolean).join(' · '))}</span></div></div>`).join('')}</div>` : `<div class="hint">${t('Контактов пока нет')}</div>`;
+      $('#pc_list', sh).innerHTML = cs.length ? `<div class="list">${cs.map(c => `<div class="ncard" data-pc="${c.id}">${avatarHtml(c)}<div class="nmain"><b>${esc(c.title)}</b><span>${esc([c.company, c.phone].filter(Boolean).join(' · '))}</span></div></div>`).join('')}</div>` : `<div class="hint">${t('Контактов пока нет')}</div>`;
       $$('[data-pc]', sh).forEach(b => b.onclick = () => { done = true; closeSheet(); res(b.dataset.pc); });
     };
     $('#pc_q', sh).oninput = draw; draw();
@@ -82,7 +87,7 @@ function pickContact(exclude = []) {
 }
 async function shareContact(id) {
   const c = getItem(id);
-  const v = vcardOf({ fn: c.title, org: c.company, phone: c.phone, whatsapp: c.whatsapp, telegram: c.telegram, email: c.email, note: c.desc });
+  const v = vcardOf({ fn: c.title, org: c.company, phone: c.phone, whatsapp: c.whatsapp, telegram: c.telegram, email: c.email, note: [c.source, c.desc].filter(Boolean).join('\n') });
   shareFile(new Blob([v], { type: 'text/vcard' }), (c.title || 'contact').replace(/[\\/:*?"<>|]/g, '') + '.vcf', c.title);
 }
 
@@ -198,7 +203,7 @@ async function openPdfExport(preset) {
     return { blob, name };
   };
   const run = async fn => { try { const r = await make(); $('#toast').classList.remove('show'); fn(r); } catch (e) { toast(e.message, 5000); } };
-  $('#pdf_share', sh).onclick = () => run(r => shareFile(r.blob, r.name, r.name));
+  $('#pdf_share', sh).onclick = () => run(r => { closeSheet(); shareMenu(blobSrc(r.blob, r.name, r.name)); });
   $('#pdf_dl', sh).onclick = () => run(r => downloadBlob(r.blob, r.name));
   $('#pdf_open', sh).onclick = () => run(r => window.open(URL.createObjectURL(r.blob), '_blank'));
 }

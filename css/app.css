@@ -468,3 +468,43 @@ i.bspin{width:15px;height:15px;border:2px solid currentColor;border-top-color:tr
 [data-pal=ocean] .now{background:linear-gradient(135deg,#e2f0fa,#d3e7f4);border-color:#bcd7ea}
 [data-pal=ocean] .splash{background:radial-gradient(120% 80% at 50% 30%,#22819a 0%,#0e3a46 75%)}
 [data-pal=ocean] .dk-mic i{box-shadow:0 8px 22px rgba(34,129,154,.4)}
+.sm-h{margin:5px 4px 14px}
+.sync-chip{display:inline-flex;align-items:center;gap:6px;max-width:100%;border:0;background:var(--card2);color:var(--txt3);font:inherit;font-size:12px;padding:5px 11px;border-radius:99px;margin:-4px 0 12px;cursor:pointer;text-align:left;line-height:1.35}
+.sync-chip.warn{background:color-mix(in srgb,var(--ora) 14%,transparent);color:var(--ora);font-weight:600}
+.sync-chip.bad{background:color-mix(in srgb,var(--red) 12%,transparent);color:var(--red);font-weight:600}
+.sync-chip.is-busy{opacity:.55}
+.seg.seg-scroll{overflow-x:auto;scrollbar-width:none;justify-content:flex-start}
+.seg.seg-scroll::-webkit-scrollbar{display:none}
+.seg.seg-scroll button{flex:0 0 auto;padding-left:13px;padding-right:13px;white-space:nowrap}
+.topic{padding:10px 0;border-bottom:1px solid var(--brd)}.topic:last-of-type{border-bottom:0}
+.topic-r{font-weight:600;color:var(--acc);font-size:13.5px;margin-top:4px}
+.coach-lock{font-size:12px;color:var(--txt3);background:var(--card2);border-radius:10px;padding:7px 10px;margin-bottom:8px}
+.coach-score{font-size:13px;color:var(--txt2)}.coach-score b{font-size:30px;font-weight:800;color:var(--acc);margin-right:2px}
+.moment{border-left:3px solid var(--v);background:var(--card2);border-radius:10px;padding:8px 11px;margin:8px 0;font-size:13.5px;line-height:1.45}
+.moment-h{display:flex;justify-content:space-between;gap:8px;color:var(--v);font-size:12.5px;margin-bottom:3px}
+.moment-q{font-style:italic;color:var(--txt2);margin-bottom:3px}
+.moment-b{margin-top:5px;color:var(--grn);font-weight:600}
+.c-acts{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:2px 0 4px}
+.c-acts::-webkit-scrollbar{display:none}
+.c-act{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:14px;background:var(--card2);color:var(--acc);text-decoration:none;font:inherit;font-size:11.5px;font-weight:600;border:0;cursor:pointer}
+.c-act span{color:var(--txt2)}
+.c-mini{display:flex;gap:2px;flex-shrink:0}
+.c-mini .xbtn{width:34px;height:34px}
+.av-row{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.av-pick{display:flex;align-items:center;gap:12px;cursor:pointer;color:var(--acc);font-weight:600;font-size:14px}
+.chat-list{display:flex;flex-direction:column;gap:8px;padding-bottom:120px}
+.cb{max-width:88%;padding:10px 13px;border-radius:16px;font-size:14.5px;line-height:1.5;word-wrap:break-word}
+.cb.me{align-self:flex-end;background:var(--acc);color:#fff;border-bottom-right-radius:5px}
+.cb.ai{align-self:flex-start;background:var(--card);border:1px solid var(--brd);border-bottom-left-radius:5px}
+.cb.err{color:var(--red)}
+.cb a{color:var(--acc)}
+.cb-src{font-size:11.5px;color:var(--txt3);margin-top:6px}
+.cb-act{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap}
+.cb-act button{font:inherit;font-size:11.5px;color:var(--txt3);background:var(--card2);border:0;border-radius:8px;padding:4px 8px;cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+.chat-ex{display:flex;flex-direction:column;gap:6px;margin-top:12px;align-items:stretch}
+.chat-ex .chip{white-space:normal;text-align:left;justify-content:flex-start}
+.chat-in{position:fixed;left:0;right:0;bottom:calc(var(--nav-h) + var(--sab));display:flex;gap:6px;align-items:flex-end;padding:8px 12px;background:var(--bg);border-top:1px solid var(--brd);z-index:20}
+.chat-in .inp{flex:1;resize:none;min-height:44px;max-height:140px;margin:0}
+.chat-send{width:44px;height:44px;border-radius:50%;border:0;background:var(--grad);color:#fff;display:grid;place-items:center;flex-shrink:0;cursor:pointer}
+@media (min-width:900px){.chat-in{left:230px;bottom:0;padding:10px 24px}}
+.chat-in .mic-btn{width:44px;height:44px;border-radius:50%;background:var(--card2);border:1px solid var(--brd);display:grid;place-items:center;color:var(--acc);flex-shrink:0}

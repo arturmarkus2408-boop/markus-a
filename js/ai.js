@@ -6,6 +6,8 @@ function nowContext() {
   const d = new Date(), off = -d.getTimezoneOffset() / 60;
   return `Сейчас: ${D.fmt(d)} ${D.nowTime()}, ${D.dowFull(d.getDay())}. Часовой пояс UTC${off >= 0 ? '+' : ''}${off}.`;
 }
+function meName() { const n = S.set.name && !/@/.test(S.set.name) ? S.set.name : ''; const al = String(S.set.aliases || '').trim(); return n || al ? ' (' + [n, al].filter(Boolean).join(', ') + ')' : ''; }
+function hms(sec) { sec = Math.max(0, Math.round(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60; return (h ? h + ':' + pad(m) : pad(m)) + ':' + pad(s); }
 function outLang() { const L = langCode(); return L === 'ru' ? 'русском' : ({ en: 'English', uz: "o'zbek (lotin)", tr: 'Türkçe', de: 'Deutsch' }[L] || langName(L)); }
 const IN_LANG = () => langCode() === 'ru' ? 'по-русски' : 'на языке: ' + outLang() + ' (язык интерфейса пользователя)';
 function parseJSON(raw) {
@@ -15,7 +17,7 @@ function parseJSON(raw) {
 
 const CMD_PROMPT = `Ты — модуль понимания команд личного ассистента MARKUS-A. Пользователь говорит или пишет на любом языке (русский, узбекский, английский, турецкий, немецкий и др.). title и noteText пиши на том же языке, на котором сказана команда. Разбери команду и верни ТОЛЬКО JSON:
 {
-"intent": "create_task" | "create_meeting" | "create_note" | "query" | "find_slot" | "unknown",
+"intent": "create_task" | "create_meeting" | "create_reminder" | "create_note" | "query" | "find_slot" | "unknown",
 "title": "краткое название действия с заглавной буквы, без даты и времени",
 "date": "YYYY-MM-DD" или null,
 "dateOptions": ["YYYY-MM-DD"] — ТОЛЬКО если дата реально неоднозначна (например «в среду», когда непонятно — эта или следующая), иначе [],
@@ -29,7 +31,9 @@ const CMD_PROMPT = `Ты — модуль понимания команд лич
 "participants": ["имена людей или компаний"],
 "place": "место" или null,
 "remindMinutesBefore": [числа минут] или null,
-"remindAt": "YYYY-MM-DDTHH:MM" или null — если назван отдельный момент напоминания,
+"remindAt": "YYYY-MM-DDTHH:MM" или null — момент, КОГДА напомнить (не дата события),
+"event": {"type": "birthday" | "anniversary" | "holiday" | "other", "date": "YYYY-MM-DD", "person": "чей"} или null — если речь о дне рождения, юбилее, годовщине, празднике,
+"yearly": true — если это день рождения / годовщина / ежегодное событие или сказано «каждый год», иначе false,
 "query": {"from":"YYYY-MM-DD","to":"YYYY-MM-DD","fromTime":"HH:MM" или null,"toTime":"HH:MM" или null} или null,
 "slot": {"durationMin": число, "untilDate": "YYYY-MM-DD"} или null,
 "noteText": "аккуратный грамотный текст заметки" или null,
@@ -39,7 +43,8 @@ const CMD_PROMPT = `Ты — модуль понимания команд лич
 1. НИКОГДА не выдумывай время. Если точное время не названо — start=null; при «утром/днём/вечером» заполни timeHint.
 2. «с 10 до 11» → start "10:00", end "11:00". «в 14 часов на час» → start "14:00", durationMin 60. «часа на два» → durationMin 120. «в 10 утра до 11 часов» → start "10:00", end "11:00".
 3. «через 2 часа», «через 30 минут» — вычисли точные date и start от текущего момента. Для коротких действий (позвонить, написать, отправить, купить) ставь durationMin 15.
-4. «Напомни мне …» — это create_task с remindMinutesBefore [0], если не сказано иное.
+4. «Напомни (мне) …», «не забыть …», «напоминалка …» — это create_reminder. title — ЧТО напомнить, коротко и понятно, с датой события, если она есть: «30 сентября в 21:00 напомни, что 1 октября день рождения у Жужика» → intent create_reminder, remindAt "YYYY-09-30T21:00", title «День рождения у Жужика — 1 октября», event {type:"birthday", date:"YYYY-10-01", person:"Жужик"}, yearly true. Если момент напоминания не назван — remindAt null.
+4а. Просто сообщение о дне рождения/годовщине без «напомни» («1 октября день рождения у Жужика») — тоже create_reminder с event и remindAt null.
 5. Встреча, переговоры, созвон с кем-то — create_meeting.
 6. «Запиши…», «заметка…», «запомни…» — create_note.
 7. «Что у меня сегодня / завтра / на неделе / после обеда» — query. «После обеда» → fromTime "13:00".
@@ -77,9 +82,10 @@ const AI = {
       return list;
     } catch (e) { return []; }
   },
-  async callModel(model, parts, { json = false, system, temp = 0.2 } = {}) {
+  async callModel(model, parts, { json = false, system, temp = 0.2, contents, tools } = {}) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(AI.key())}`;
-    const body = { contents: [{ role: 'user', parts }], generationConfig: { temperature: temp } };
+    const body = { contents: contents || [{ role: 'user', parts }], generationConfig: { temperature: temp } };
+    if (tools) body.tools = tools;
     if (json) body.generationConfig.responseMimeType = 'application/json';
     if (system) body.systemInstruction = { parts: [{ text: system }] };
     let r;
@@ -96,7 +102,10 @@ const AI = {
       throw er;
     }
     const d = await r.json();
-    const text = ((d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts) || []).map(p => p.text || '').join('');
+    AI.lastFinish = (d.candidates && d.candidates[0] && d.candidates[0].finishReason) || '';   // MAX_TOKENS = the answer was cut off
+    const text = ((d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts) || []).filter(p => !p.thought).map(p => p.text || '').join('');
+    const gm = d.candidates && d.candidates[0] && d.candidates[0].groundingMetadata;   // web search: the pages the answer is based on
+    AI.lastSources = gm && gm.groundingChunks ? gm.groundingChunks.map(c => c.web).filter(w => w && w.uri).map(w => ({ title: w.title || w.uri, uri: w.uri })).slice(0, 6) : [];
     if (!text) { const er = new Error(t('AI вернул пустой ответ')); er.next = true; throw er; }
     return json ? parseJSON(text) : text.trim();
   },
@@ -153,14 +162,36 @@ const AI = {
     return AI.call([{ text: `${nowContext()}\nКатегории: ${cats}.\nКоманда пользователя: «${text}»` }], { json: true, system: CMD_PROMPT, temp: 0 });
   },
 
-  async transcribe(blob, mime, meeting, onPct) {
+  async transcribe(blob, mime, meeting, onPct, onStep) {
     const base = (mime || blob.type || 'audio/webm').split(';')[0];
-    const who = (meeting.participants || []).length ? 'Участники: ' + meeting.participants.join(', ') + ' и владелец записи' + (S.set.name ? ' (' + S.set.name + ')' : '') + ' — «Я».' : 'Владелец записи' + (S.set.name ? ' (' + S.set.name + ')' : '') + ' — «Я».';
+    const who = (meeting.participants || []).length ? 'Участники: ' + meeting.participants.join(', ') + ' и владелец записи' + meName() + ' — «Я».' : 'Владелец записи' + meName() + ' — «Я».';
     const prompt = `Сделай точную стенограмму этой записи ${meeting.emergency ? 'разговора' : 'встречи'} на языке оригинала (русский, узбекский или другой). ${who}
-Разделяй реплики по говорящим: «Участник 1:», «Участник 2:» — или по именам, если они понятны из разговора. Расставь знаки препинания, разбей на абзацы. Суммы, даты, сроки, ФИО, номера кабинетов, телефоны и названия компаний пиши точно. Телефон мог лежать далеко или в шумном месте: внимательно расшифруй и тихую, дальнюю речь, реплики вполголоса и фразы на фоне шума; что разобрать невозможно — пометь [неразборчиво], а не пропускай молча. Ничего не добавляй от себя. Верни только текст стенограммы.${(meeting.recording && (meeting.recording.calls || []).length) ? ' Запись ставилась на паузу на время телефонных звонков — на стыках фраза может обрываться, отметь такое место как [пауза].' : ''}`;
+Разделяй реплики по говорящим: «Участник 1:», «Участник 2:» — или по именам, если они понятны из разговора. Расставь знаки препинания, разбей на абзацы. Суммы, даты, сроки, ФИО, номера кабинетов, телефоны и названия компаний пиши точно. Телефон мог лежать далеко или в шумном месте: внимательно расшифруй и тихую, дальнюю речь, реплики вполголоса и фразы на фоне шума; что разобрать невозможно — пометь [неразборчиво], а не пропускай молча. Ничего не добавляй от себя и НИЧЕГО не сокращай — нужна дословная стенограмма, а не пересказ. Верни только текст стенограммы.${(meeting.recording && (meeting.recording.calls || []).length) ? ' Запись ставилась на паузу на время телефонных звонков — на стыках фраза может обрываться, отметь такое место как [пауза].' : ''}`;
+    const dur = Math.round(+(meeting.recording && meeting.recording.duration) || 0);
+    const mt = base === 'audio/webm' ? 'audio/webm' : base;
+    // v3.8: a long meeting is transcribed in 10-minute pieces. In one piece the AI shortened or cut off
+    // the text after ~20–30 minutes, and the summary was then made from a fragment.
+    if (dur > 12 * 60) {
+      if (blob.size > 1900 * 1048576) throw new Error(t('Запись слишком большая для AI'));
+      const part = await AI.uploadFile(blob, mt, onPct);
+      const CH = 10 * 60, n = Math.ceil(dur / CH), out = [];
+      for (let k = 0; k < n; k++) {
+        const a = k * CH, b = Math.min(dur, (k + 1) * CH);
+        if (onStep) onStep(k + 1, n);
+        const prev = out.length ? out[out.length - 1].slice(-1200) : '';
+        const ask = prompt + `\n\nВАЖНО: расшифруй ТОЛЬКО часть записи с ${hms(a)} по ${hms(b)} (${a >= 3600 || b >= 3600 ? 'часы:минуты:секунды' : 'минуты:секунды'}) — полностью, дословно, от первой до последней реплики этого отрезка.` + (prev ? `\nПредыдущий отрезок закончился так (только чтобы одинаково называть говорящих, не повторяй его):\n«…${prev}»` : '');
+        let txt = '';
+        for (let tr = 0; tr < 2 && !txt; tr++) {
+          try { txt = await AI.call([part, { text: ask }], { temp: 0 }); }
+          catch (e) { if (e.fatal || e.net) throw e; if (tr === 0) await sleep(15000); else txt = `[${t('этот отрезок не удалось расшифровать')}: ${e.message}]`; }
+        }
+        out.push(String(txt).trim());
+      }
+      return out.map((x, k) => `[${hms(k * CH)}]\n${x}`).join('\n\n');
+    }
     if (blob.size > 14 * 1048576) {
       if (blob.size > 1900 * 1048576) throw new Error(t('Запись слишком большая для AI'));
-      const part = await AI.uploadFile(blob, base === 'audio/webm' ? 'audio/webm' : base, onPct);
+      const part = await AI.uploadFile(blob, mt, onPct);
       return AI.call([part, { text: prompt }], { temp: 0 });
     }
     const data = await b64(blob);
@@ -168,8 +199,8 @@ const AI = {
     if (base === 'audio/webm') tries.push('video/webm', 'audio/ogg');
     if (base === 'audio/mp4') tries.push('audio/aac', 'video/mp4');
     let err;
-    for (const mt of tries) {
-      try { return await AI.call([{ inline_data: { mime_type: mt, data } }, { text: prompt }], { temp: 0 }); }
+    for (const mt2 of tries) {
+      try { return await AI.call([{ inline_data: { mime_type: mt2, data } }, { text: prompt }], { temp: 0 }); }
       catch (e) { err = e; if (!e.input && !/mime|format|unsupported|invalid|400/i.test(e.message)) throw e; }
     }
     throw err;
@@ -177,24 +208,63 @@ const AI = {
 
   analyzeMeeting(m) {
     const md = m.date || D.today();
-    const me = S.set.name ? `«${S.set.name}» (владелец записи, «Я»)` : 'владелец записи («Я»)';
+    const me = S.set.name && !/@/.test(S.set.name) ? `«${S.set.name}» (владелец записи, «Я»)` : 'владелец записи («Я»)';
     const kind = m.emergency ? 'Это ЭКСТРЕННАЯ запись разговора (например, визит в госорган, банк, неожиданная беседа). Особенно выдели: что сказали сделать, какие документы нужны, сроки, куда и к кому обратиться (ФИО, должности, кабинеты, телефоны), размеры платежей.' : '';
+    const mins = Math.round((+(m.recording && m.recording.duration) || 0) / 60);
+    const size = mins >= 60 ? 'Встреча длинная (' + mins + ' мин): итоги должны быть ПОДРОБНЫМИ — каждая обсуждённая тема отдельным разделом, в каждом разделе 3–10 конкретных пунктов. Краткость здесь вредна: важнее не потерять ни одного плана, цифры, условия и договорённости.'
+      : mins >= 20 ? 'Встреча средней длины (' + mins + ' мин): подробно по каждой теме.' : '';
     const prompt = `${nowContext()}
-Встреча: «${m.title}». ДАТА ВСТРЕЧИ: ${md} (${D.dowFull(D.parse(md).getDay())}), время ${m.start || '—'}–${m.end || '—'}. Участники: ${(m.participants || []).join(', ') || 'не указаны'}. Место: ${m.place || '—'}. Пользователь приложения: ${me}.
+Встреча: «${m.title}». ДАТА ВСТРЕЧИ: ${md} (${D.dowFull(D.parse(md).getDay())}), время ${m.start || '—'}–${m.end || '—'}. Участники: ${(m.participants || []).join(', ') || 'не указаны'}. Место: ${m.place || '—'}. Пользователь приложения: ${me}${S.set.aliases ? ' (его также называют: ' + S.set.aliases + ')' : ''}.
 ${kind}
-Проанализируй стенограмму и верни ТОЛЬКО JSON:
-{"summary":{"short":["3–10 главных мыслей"],"decisions":["что решили"],"commitments":[{"who":"кто","what":"что должен сделать","due":"срок как точная дата YYYY-MM-DD и время, или пусто"}],"deadlines":["точные даты и сроки — что к ним"],"important":["что важно запомнить: суммы, условия, реквизиты, ФИО"],"risks":["что осталось нерешённым, риски"],"next":["следующие шаги"]},
+Ты — опытный помощник юриста и бизнес-аналитик. Прочитай ВСЮ стенограмму от начала до конца и сделай итоги, по которым человек, не бывший на встрече, поймёт всё важное.
+${size}
+Что считать важным: планы на будущее и их этапы, инвестиции и деньги (суммы, доли, проценты, сроки, условия), решения, договорённости, кто что обещал, позиции и интересы каждой стороны, риски, спорные и открытые вопросы, имена, компании, документы, даты. Что НЕ включать: приветствия, светскую болтовню, технические паузы, повторы одного и того же.
+Верни ТОЛЬКО JSON:
+{"summary":{
+"short":["главные итоги встречи — самое важное, 5–15 пунктов, каждый — законченная мысль с конкретикой"],
+"topics":[{"title":"тема","points":["что обсуждали по этой теме: предложения, аргументы, цифры, кто что сказал"],"result":"к чему пришли по теме (или «не решено»)"}],
+"plans":["планы и этапы на будущее: этап — что делается — срок — сумма/ресурс — кто отвечает"],
+"numbers":["все цифры с контекстом: суммы, доли, проценты, сроки, количества"],
+"positions":[{"who":"участник","stance":"чего хочет, что предлагает, чего опасается, на что не согласен"}],
+"decisions":["что решили"],
+"commitments":[{"who":"кто","what":"что должен сделать","due":"срок как точная дата YYYY-MM-DD и время, или пусто"}],
+"deadlines":["точные даты и сроки — что к ним"],
+"important":["что важно запомнить: условия, реквизиты, ФИО, названия, документы"],
+"risks":["риски и что может пойти не так"],
+"questions":["открытые вопросы — что осталось неясным и что нужно уточнить"],
+"next":["следующие шаги"]},
 "items":[{"type":"task|meeting|control","title":"…","date":"YYYY-MM-DD или null","start":"HH:MM или null","end":"HH:MM или null","dueTime":"HH:MM или null","priority":"normal|high|critical","who":"кто исполняет","participants":["с кем"],"place":"место или null","goals":"для встречи: цели, что обсудить, что подготовить и взять с собой","notes":"детали: суммы, условия, что именно подготовить"}]}
 ПРАВИЛА ДЛЯ items:
 1. Все относительные сроки считай ОТ ДАТЫ ВСТРЕЧИ ${md}: «завтра» = +1 день, «через 3 дня» = +3 календарных дня, «в пятницу» = ближайшая пятница после даты встречи, «на следующей неделе» = понедельник следующей недели, «через неделю» = +7 дней, «к концу месяца» = последний день месяца. Всегда пиши точную дату YYYY-MM-DD. Даты без года — ближайшая будущая такая дата.
 2. type "task" — то, что должен сделать ${me}. Название — конкретное действие с объектом и именем контрагента, например «Подготовить проект договора аренды для Василия». «до 15 часов» → dueTime "15:00"; точное время начала работы → start.
 3. type "control" — то, что пообещал сделать собеседник (не пользователь): «Проконтролировать: Василий пришлёт реквизиты» на дату его срока.
 4. type "meeting" — договорились о новой встрече, звонке или созвоне: title «Встреча с Василием» (или «Созвон с …»), date, start — только если время прямо названо (иначе null), place, participants, goals — цели и детали встречи из разговора.
-5. Не выдумывай задачи и время. Не включай то, что уже сделано во время встречи.
+5. Не выдумывай задачи, цифры и время. Не включай то, что уже сделано во время встречи. Пустые разделы — пустой массив [].
 Пиши ${IN_LANG()}.
 СТЕНОГРАММА:
-${(m.transcript || '').slice(0, 400000)}`;
+${(m.transcript || '').slice(0, 600000)}`;
     return AI.call([{ text: prompt }], { json: true, temp: 0.1 });
+  },
+
+  /* v3.8: a private review of how the user himself did in the meeting — only for him */
+  coachMeeting(m) {
+    const nm = S.set.name && !/@/.test(S.set.name) ? S.set.name : '';
+    const names = [nm].concat(String(S.set.aliases || '').split(',')).map(x => x.trim()).filter(Boolean);
+    const prompt = `Ты — строгий и доброжелательный наставник по переговорам для юриста/адвоката и предпринимателя. Ниже стенограмма встречи «${m.title}».
+Пользователь приложения — ${names.length ? 'это ' + names.map(x => '«' + x + '»').join(' / ') : 'владелец записи'} («Я»). Найди в стенограмме его реплики: по имени, по обращениям к нему собеседников, по тому, кто организовал встречу. Если его реплики однозначно определить нельзя — честно скажи об этом в "overall" и оцени того, кто, скорее всего, им является, указав, кого ты оцениваешь.
+Оцени ТОЛЬКО его: как он отвечал и вёл разговор — уверенно или неуверенно, по делу или не в тему, точно и чётко или размыто, где был силён, где ошибся, где упустил выгоду или дал лишнее обещание, где стоило задать вопрос, но не задал. Опирайся на конкретные фразы из стенограммы (цитируй коротко). Никакой лести и общих слов — только конкретика, которую можно применить.
+Верни ТОЛЬКО JSON:
+{"who":"как он обозначен в стенограмме","score":число 1–10 (общая оценка, как он провёл встречу),"overall":"2–4 предложения: общее впечатление",
+"confidence":"уверенность речи: где звучал уверенно, где неуверенно и почему",
+"strengths":["сильные стороны — с примером из разговора"],
+"weaknesses":["слабые стороны — с примером"],
+"moments":[{"time":"отметка времени из стенограммы, если есть, иначе пусто","quote":"что он сказал (коротко)","verdict":"good|weak|off|wrong","comment":"что здесь хорошо или не так","better":"как лучше было сказать — готовая фраза"}],
+"fix":["что сделать сейчас, чтобы исправить ошибки этой встречи: кому позвонить, что уточнить, что отправить, какую позицию занять"],
+"advice":["рекомендации на следующие встречи"]}
+Моментов — от 4 до 12, самые показательные: и удачные, и неудачные. Пиши ${IN_LANG()}, обращайся к нему на «вы».
+СТЕНОГРАММА:
+${(m.transcript || '').slice(0, 600000)}`;
+    return AI.call([{ text: prompt }], { json: true, temp: 0.3 });
   },
 
   async docParts(f) {

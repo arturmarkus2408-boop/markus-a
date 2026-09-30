@@ -141,9 +141,9 @@ function row(it, o = {}) {
   if (o.cont) tcol = `<div class="row-time"><span>${t('до')}</span>${esc(D.short(spanEnd(it)))}</div>`;
   const ns = !done && it.status !== 'cancelled' && (it.subtasks || []).length ? nextSub(it) : null;
   const sub = [
-    o.resched ? '' : `<span class="cat sm" style="--t:${c.color}">${esc(catName(c))}</span>`,
+    it.reminder ? `<span class="tag" style="--t:var(--acc)">🔔 ${t('Напоминание')}</span>` : o.resched ? '' : `<span class="cat sm" style="--t:${c.color}">${esc(catName(c))}</span>`,
     statusTag(it),
-    it.priority !== 'normal' ? `<span class="tag" style="--t:${PRIO[it.priority].c}">${t(PRIO[it.priority].l)}</span>` : '',
+    PRIO[it.priority] && it.priority !== 'normal' ? `<span class="tag" style="--t:${PRIO[it.priority].c}">${t(PRIO[it.priority].l)}</span>` : '',
     ((it.subtasks || []).length && p > 0) || it.status === 'cancelled' ? pbar(p, it.status === 'cancelled') : '',
     it.kind === 'meeting' && it.recording ? `<span class="mini">${ic('rec', 12)}</span>` : '',
     (it.files || []).length ? `<span class="mini">${ic('clip', 12)}${it.files.length}</span>` : '',
@@ -243,7 +243,7 @@ async function subToggle(itemId, subId) {
   refreshDetail(itemId);
   if (it.subtasks.every(x => x.done) && it.status !== 'done') {
     const v = await dialog({ title: t('Все подзадачи выполнены'), text: t('Отметить задачу «{x}» выполненной?', { x: esc(it.title) }), buttons: [{ l: t('Да, задача выполнена'), v: 1, p: 1 }, { l: t('Пока нет'), v: 0 }] });
-    if (v) { await setStatus(it, 'done'); toast(t('Задача выполнена ✓')); refreshDetail(itemId); }
+    if (v) { if (await setStatus(it, 'done')) toast(t('Задача выполнена ✓')); refreshDetail(itemId); }
   }
 }
 
@@ -275,7 +275,8 @@ function openEditor(kind = 'task', preset = {}) {
       <label class="lbl">${t('Повтор')}</label>
       <select class="inp" id="e_rep">${Object.keys(REPEAT).map(k => `<option value="${k}" ${E.repeat && E.repeat.type === k ? 'selected' : ''}>${t(REPEAT[k])}</option>`).join('')}</select>
       <div id="e_repx"></div>
-      <label class="lbl">${isMeet ? t('Участники') : t('Связанные люди и компании')}</label>
+      <label class="lbl">${isMeet ? t('Участники и клиент') : t('Связанные люди и компании')}</label>
+      ${isMeet ? `<div class="hint" style="margin-top:-2px">${t('ФИО, телефон, Telegram, WhatsApp, почта, фото, откуда клиент — сохранятся в «Контактах».')}</div>` : ''}
       <div id="e_people"></div>
       ${isMeet ? `<label class="lbl">${t('Место')}</label><input class="inp" id="e_place" value="${esc(E.place || '')}" placeholder="${esc(t('Офис, ресторан, адрес'))}">
       <div class="sw-row" style="margin-top:8px"><div><b>${t('Автозапись встречи')}</b><span>${t('Запись начнётся сама за {a} мин до начала и остановится через {b} мин после конца. Работает, если MARKUS-A открыт на экране; иначе придёт уведомление и сообщение в Telegram с кнопкой «Начать запись».', { a: S.set.recPre, b: S.set.recPost })}</span></div><button class="sw ${E.autoRecord ? 'on' : ''}" id="e_auto"></button></div>` : ''}
@@ -309,6 +310,13 @@ function openEditor(kind = 'task', preset = {}) {
     if (isNew && !E.title) setTimeout(() => $('#e_title', sh) && $('#e_title', sh).focus(), 250);
     $('#e_save', sh).onclick = async () => {
       const r = await edCollect(); if (!r) return;
+      // a birthday / anniversary: offer to repeat it every year (once, when it has no repeat yet)
+      if (isBirthday(E.title) && E.date && (!E.repeat || E.repeat.type === 'none') && !E._askedYear) {
+        E._askedYear = true;
+        const y = await dialog({ title: '🎂 ' + t('Напоминать каждый год?'), text: esc(E.title), buttons: [{ l: t('Да, каждый год'), v: 'y', p: 1 }, { l: t('Только один раз'), v: 'n' }] });
+        if (y === 'y') { E.repeat = { type: 'yearly' }; E.reminder = true; }
+      }
+      delete E._askedYear;
       const ok = await resolveConflicts(E); if (!ok) return;
       await saveItem(E);
       saved = true; closeSheet(); toast(isNew ? t('Создано ✓') : t('Сохранено ✓'));
@@ -407,7 +415,7 @@ function edRenderPeople() {
   const box = $('#e_people'); if (!box) return;
   const cs = (E.contactIds || []).map(getItem).filter(c => c && !c.deleted);
   const names = (E.participants || []).filter(n => !cs.some(c => c.title === n));
-  box.innerHTML = `<div class="chips wrapchips">${cs.map(c => `<span class="chip on" onclick="edRemovePerson('${c.id}')">${ic('user', 13)} ${esc(c.title)} ✕</span>`).join('')}${names.map(n => `<span class="chip" onclick="edRemoveName('${esc(n).replace(/'/g, '&#39;')}')">${esc(n)} ✕</span>`).join('')}<button class="chip" onclick="edAddPerson()">${ic('plus', 13)} ${t('Добавить')}</button></div>`;
+  box.innerHTML = `<div class="chips wrapchips">${cs.map(c => `<span class="chip on" onclick="edRemovePerson('${c.id}')">${ic('user', 13)} ${esc(c.title)} ✕</span>`).join('')}${names.map(n => `<span class="chip" onclick="edRemoveName('${esc(n).replace(/'/g, '&#39;')}')">${esc(n)} ✕</span>`).join('')}<button class="chip" onclick="edAddPerson()">${ic('plus', 13)} ${t('Выбрать из контактов')}</button><button class="chip on" onclick="edNewClient()">${ic('user', 13)} ${t('Новый клиент')}</button></div>`;
 }
 async function edAddPerson() { const id = await pickContact(E.contactIds || []); if (!id) return; E.contactIds = Array.from(new Set((E.contactIds || []).concat(id))); edRenderPeople(); }
 function edRemovePerson(id) { E.contactIds = (E.contactIds || []).filter(x => x !== id); edRenderPeople(); }
@@ -509,7 +517,7 @@ async function tdStatus(id, st) {
     }
   }
   else if (st === 'cancelled') await askCancelReason(it);
-  else { await setStatus(it, st); toast(t('Статус: {s}', { s: t(STATUS[st]) })); }
+  else { if (await setStatus(it, st)) toast(t('Статус: {s}', { s: t(STATUS[st]) })); }
   refreshDetail(id);
 }
 async function tdAddSub(id) { const it = getItem(id); if (await openSubEditor(it, null)) { await saveItem(it); refreshDetail(id); } }
@@ -580,20 +588,21 @@ async function openFile(holderId, fileId) {
     <div class="hint">${mb(f.size)} · ${esc(it.title)}</div>
     <div id="fv"></div>
     <div class="btns" style="margin-top:12px"><button class="btn pri" id="f_open">${t('Открыть')}</button><button class="btn ghost" id="f_share">${ic('share', 18)} ${t('Поделиться')}</button></div>
-    <div class="btns" style="margin-top:8px"><button class="btn ghost" id="f_dl">${ic('download', 18)} ${t('Сохранить в телефон')}</button>${f.isRec ? '' : `<button class="btn ghost" id="f_fav">${ic(f.fav ? 'starf' : 'star', 18)}</button>`}</div>
+    <div class="btns" style="margin-top:8px"><button class="btn ghost" id="f_dl">${ic('download', 18)} ${isPhone() ? t('Сохранить в телефон') : t('Скачать на компьютер')}</button>${f.isRec ? '' : `<button class="btn ghost" id="f_fav">${ic(f.fav ? 'starf' : 'star', 18)}</button>`}</div>
     <div class="btns" style="margin-top:8px"><button class="btn ghost" id="f_sum">${ic('ai', 16)} ${t('Кратко (AI)')}</button><button class="btn ghost" id="f_ask">${ic('ai', 16)} ${t('Спросить')}</button></div>
     <div id="f_ai"></div>
     <button class="btn danger full" style="margin-top:8px" onclick="deleteFile('${it.id}','${f.isRec ? 'rec' : f.id}')">${ic('trash', 18)} ${t('Удалить файл')}</button>
     ${it.kind !== 'note' || it.noteCat !== 'Документы' ? `<button class="btn ghost full" style="margin-top:8px" onclick="closeAllSheets();openItem('${it.id}')">${t('Перейти')}: ${esc(it.title.slice(0, 40))}</button>` : ''}
   `);
-  const blob = await getFileBlob(f);
+  const blobP = getFileBlob(f).catch(() => null);
+  const typed = b => b.type ? b : new Blob([b], { type: f.type });
+  $('#f_share', sh).onclick = () => shareStored(it.id, f.isRec ? 'rec' : f.id);   // works at once, even while the file is still loading
+  $('#f_dl', sh).onclick = async () => { const b = await blobP; if (!b) return toast(t('Файл есть только на другом устройстве. Войдите в облако и синхронизируйте.'), 4000); downloadBlob(b, f.name); };
+  $('#f_open', sh).onclick = async () => { const b = await blobP; if (!b) return toast(t('Файл есть только на другом устройстве. Войдите в облако и синхронизируйте.'), 4000); window.open(URL.createObjectURL(typed(b)), '_blank'); };
+  const blob = await blobP;
   if (!blob) { $('#fv', sh).innerHTML = `<div class="hint warn">${t('Файл есть только на другом устройстве. Войдите в облако и синхронизируйте.')}</div>`; }
   else if (kind === 'img') { $('#fv', sh).innerHTML = `<img src="${URL.createObjectURL(blob)}" style="width:100%;border-radius:12px;max-height:50vh;object-fit:contain;background:var(--card2)">`; }
   else if (kind === 'audio') { $('#fv', sh).innerHTML = `<audio controls style="width:100%" src="${URL.createObjectURL(blob)}"></audio>`; }
-  const typed = () => blob.type ? blob : new Blob([blob], { type: f.type });
-  $('#f_open', sh).onclick = () => { if (!blob) return; window.open(URL.createObjectURL(typed()), '_blank'); };
-  $('#f_dl', sh).onclick = () => blob && downloadBlob(blob, f.name);
-  $('#f_share', sh).onclick = () => blob && shareFile(typed(), f.name, it.title);
   if ($('#f_fav', sh)) $('#f_fav', sh).onclick = async () => { f.fav = !f.fav; await saveItem(it); $('#f_fav', sh).innerHTML = ic(f.fav ? 'starf' : 'star', 18); toast(f.fav ? t('В избранном ★') : t('Убрано из избранного')); };
   const out = $('#f_ai', sh);
   $('#f_sum', sh).onclick = async () => {

@@ -28,8 +28,9 @@ function tick() {
         const lab = it.remindLabels && it.remindLabels[iso];
         const title = lab ? '🔔 ' + it.title : reminderTitle(it);
         const body = lab || [whenLabel(it), it.place].filter(Boolean).join(' · ') || 'MARKUS-A';
-        const actions = lab ? [{ action: 'open', title: t('Открыть') }, { action: 'snooze', title: '💤 ' + t('+1 час') }]
-          : [{ action: 'done', title: '✓ ' + t('Выполнено') }, { action: 'snooze', title: '💤 ' + t('+10 мин') }];
+        // Windows shows only two buttons: the second one opens a choice — 10 min … tomorrow, or your own time
+        const actions = lab ? [{ action: 'open', title: t('Открыть') }, { action: 'snooze', title: '💤 ' + t('Отложить…') }]
+          : [{ action: 'done', title: '✓ ' + t('Выполнено') }, { action: 'snooze', title: '💤 ' + t('Отложить…') }];
         // in the Android app the phone shows reminders by itself (even when the app is closed)
         if (!NATIVE) notify(title, body + (it.nag ? '\n' + t('Напоминание повторится, пока не отметите «Выполнено»') : ''), { tag: 'r-' + it.id, id: it.id, actions, sticky });
         if (!NATIVE || document.visibilityState === 'visible') beep(); toast(title + (lab ? ' — ' + lab : ''), 6000);
@@ -72,6 +73,28 @@ function minuteRefresh() {
   if (!Sheets.length && ['home', 'calendar', 'tasks'].includes(S.route) && !document.activeElement.matches('input,textarea')) render();
 }
 
+/* ================= «Отложить…» — you choose when to be reminded again ================= */
+async function snoozePicker(id) {
+  const it = getItem(id); if (!it) return;
+  const now = new Date(), td = D.today(), st = S.set;
+  const at = (d, tm) => D.dt(d, tm).getTime();
+  const opts = [[10, '10 мин'], [30, '30 мин'], [60, '1 час'], [180, '3 часа']].map(([m, l]) => ({ l: t(l), v: Date.now() + m * 60000 }));
+  if (at(td, st.eveTime || '19:00') > Date.now() + 15 * 60000) opts.push({ l: t('Сегодня вечером') + ' ' + (st.eveTime || '19:00'), v: at(td, st.eveTime || '19:00') });
+  opts.push({ l: t('Завтра утром') + ' ' + (st.morningTime || '09:00'), v: at(D.add(td, 1), st.morningTime || '09:00') });
+  const def = new Date(Date.now() + 3600000); const dv = D.fmt(def) + 'T' + pad(def.getHours()) + ':' + pad(def.getMinutes());
+  const v = await dialog({
+    title: '💤 ' + t('Когда напомнить снова?'), text: esc(it.title),
+    html: `<div class="chips wrapchips" style="margin:6px 0 10px">${opts.map((o, i) => `<button class="chip" data-sn="${i}">${esc(o.l)}</button>`).join('')}</div>
+      <label class="lbl">${t('Или своё время')}</label><input class="inp" type="datetime-local" id="sn_dt" value="${dv}" min="${D.fmt(now)}T00:00">`,
+    buttons: [{ l: t('Напомнить в это время'), v: sh => { const x = Date.parse($('#sn_dt', sh).value); if (!(x > Date.now())) { toast(t('Выберите время в будущем')); return false; } return x; }, p: 1 }, { l: t('Отмена'), v: null }],
+    onMount: sh => $$('[data-sn]', sh).forEach(b => b.onclick = () => { const d = new Date(opts[+b.dataset.sn].v + 30000); $('#sn_dt', sh).value = D.fmt(d) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()); $('.dlg-b .btn.pri', sh).click(); })
+  });
+  if (!v) return;
+  it.customRemind = new Date(v).toISOString(); await saveItem(it);
+  const d = new Date(v);
+  toast(t('Напомню {d} в {t}', { d: D.human(D.fmt(d)), t: pad(d.getHours()) + ':' + pad(d.getMinutes()) }), 3500);
+}
+
 /* ================= deep links & SW actions ================= */
 async function handleAction(action, id) {
   const it = id && getItem(id);
@@ -81,8 +104,8 @@ async function handleAction(action, id) {
   if (action === 'recimport') { const n = await nativeImport(); if (!n && S.route !== 'home') go('home'); return; }
   if (action === 'micperm') { go('settings'); if (NATIVE) NATIVE.openSetup('mic'); return; }
   if (!it) return;
-  if (action === 'done') { await setStatus(it, 'done'); toast(t('Готово ✓') + ' ' + it.title); }
-  else if (action === 'snooze') { const lab = Object.values(it.remindLabels || {}).length; it.customRemind = new Date(Date.now() + (lab ? 60 : 10) * 60000).toISOString(); await saveItem(it); toast(lab ? t('Напомню через час') : t('Напомню через 10 минут')); }
+  if (action === 'done') { if (await setStatus(it, 'done')) toast(t('Готово ✓') + ' ' + it.title); }
+  else if (action === 'snooze') snoozePicker(id);
   else if (action === 'resched') smartReschedule(id);
   else if (action === 'rec') { go('meeting', id); const ok = await Rec.start(id, { auto: true }); if (!ok) toast(t('Нажмите «Начать запись встречи»')); }
   else if (it.kind === 'meeting' && it.needsTime && !it.start) { go('meeting', id); askMeetingTime(id); }
@@ -194,6 +217,7 @@ async function boot() {
   window.addEventListener('online', () => Cloud.sync());
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { Cloud.sync(); tick(); minuteRefresh(); } });
   setInterval(() => { tick(); minuteRefresh(); }, 15000);
+  setTimeout(rollReminders, 4000); setInterval(rollReminders, 10 * 60000);
   setInterval(() => Cloud.sync(), 60000);
   tick();
   Cloud.init().then(() => { if (S.route === 'settings') render(); });

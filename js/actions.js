@@ -14,8 +14,12 @@ function itemFileMetas(it) {
 /* removes files from the phone and from the cloud (frees the free 1 GB) */
 async function purgeFiles(metas) {
   const paths = [];
+  // v3.8: a file can be shared by several cards (older repeats of a task copied their documents) —
+  // it is removed only when no other card uses it any more
+  const used = new Set();
+  S.items.forEach(i => { if (!i.deleted) itemFileMetas(i).forEach(x => x && x.id && used.add(x.id)); });
   for (const f of metas) {
-    if (!f || !f.id) continue;
+    if (!f || !f.id || used.has(f.id)) continue;
     await DB.del('files', f.id).catch(() => { });
     if (f.cloud && window.Cloud && Cloud.user) {
       if (f.parts > 1) for (let i = 0; i < f.parts; i++) paths.push(Cloud.user.id + '/' + f.id + '.part' + i);
@@ -97,30 +101,44 @@ document.addEventListener('contextmenu', e => {
 async function openItemPdf(id) {
   const it = getItem(id); if (!it) return;
   const isM = it.kind === 'meeting', s = it.summary || {};
+  // v3.8: a meeting with «Мой разбор» — first ask who the PDF is for
+  let aud = 'self';
+  if (it.coach) {
+    aud = await dialog({ title: t('Для кого этот PDF?'), text: esc(t('«Для себя» — с вашим личным разбором (сильные и слабые стороны, ошибки, рекомендации). «Для общего пользования» — без него: можно отдать клиенту, партнёру, распечатать.')),
+      buttons: [{ l: t('Для себя (с моим разбором)'), v: 'self' }, { l: t('Для общего пользования'), v: 'public', p: 1 }, { l: t('Отмена'), v: null }] });
+    if (!aud) return;
+  }
+  const cs = (it.contactIds || []).map(getItem).filter(c => c && !c.deleted);
+  const pics = pdfPhotos(it, cs);
   const opts = [
     ['desc', isM ? 'Заметки и цели' : 'Описание', !!(it.desc || it.goals)],
     ['subs', 'Подзадачи', (it.subtasks || []).length > 0],
-    ['people', 'Участники и места', (it.participants || []).length > 0 || (it.locations || []).length > 0],
+    ['people', 'Участники и места (адрес, координаты, ссылки на карты)', (it.participants || []).length > 0 || (it.locations || []).length > 0 || !!it.place],
+    ['contacts', 'Контакты участников: телефон, Telegram, WhatsApp, почта', cs.length > 0],
+    ['photos', 'Фото крупно: места, клиенты, изображения из материалов ({n})', pics.length > 0],
     ['files', 'Список материалов и ссылок', (it.files || []).length > 0 || (it.links || []).length > 0],
     ['sum', 'AI-итоги встречи', isM && !!it.summary],
     ['made', 'Задачи и встречи из итогов', isM && (it.proposed || []).length > 0],
     ['tr', 'Стенограмма (полный текст)', isM && !!it.transcript],
-    ['res', 'Результат', !!(it.result && (it.result.note || (it.result.files || []).length))]
+    ['res', 'Результат', !!(it.result && (it.result.note || (it.result.files || []).length))],
+    ['coach', '🔒 Мой разбор (только для меня)', aud === 'self' && !!it.coach]
   ].filter(x => x[2]);
   const sh = openSheet(`
     <div class="sh-h"><b>${t('PDF')}: ${esc(it.title.slice(0, 40))}</b><button class="xbtn" onclick="closeSheet()">${ic('x', 18)}</button></div>
+    ${aud === 'public' ? `<div class="coach-lock">${t('Для общего пользования: ваш личный разбор в документ не попадёт.')}</div>` : ''}
     <div class="hint">${t('Что включить в документ:')}</div>
-    ${opts.map(([k, l]) => `<div class="sw-row"><div><b>${t(l)}</b></div><button class="sw ${k === 'tr' ? '' : 'on'}" data-k="${k}"></button></div>`).join('') || `<div class="hint">${t('В документ войдут название, дата, время и статус.')}</div>`}
-    <div class="btns" style="margin-top:14px"><button class="btn pri" id="ip_share">${ic('share', 18)} ${t('Поделиться')}</button><button class="btn ghost" id="ip_dl">${ic('download', 18)} ${t('В телефон')}</button></div>
+    ${opts.map(([k, l]) => `<div class="sw-row"><div><b>${t(l, { n: pics.length })}</b></div><button class="sw ${k === 'tr' ? '' : 'on'}" data-k="${k}"></button></div>`).join('') || `<div class="hint">${t('В документ войдут название, дата, время и статус.')}</div>`}
+    <div class="btns" style="margin-top:14px"><button class="btn pri" id="ip_share">${ic('share', 18)} ${t('Поделиться')}</button><button class="btn ghost" id="ip_dl">${ic('download', 18)} ${isPhone() ? t('В телефон') : t('Скачать')}</button></div>
     <button class="btn ghost full" style="margin-top:8px" id="ip_open">${ic('pdf', 18)} ${t('Открыть / Печать')}</button>`, { cls: 'tall' });
   $$('.sw', sh).forEach(b => b.onclick = () => b.classList.toggle('on'));
   const make = async () => {
     const o = {}; $$('.sw', sh).forEach(b => { o[b.dataset.k] = b.classList.contains('on'); });
+    if (aud !== 'self') o.coach = false;   // never, whatever the switches say
     const blob = await buildItemPdf(getItem(id), o);
-    return { blob, name: (it.title.replace(/[\\/:*?"<>|]/g, ' ').slice(0, 60) || 'MARKUS-A') + (it.date ? ' ' + it.date : '') + '.pdf' };
+    return { blob, name: (it.title.replace(/[\\/:*?"<>|]/g, ' ').slice(0, 60) || 'MARKUS-A') + (it.date ? ' ' + it.date : '') + (aud === 'self' && o.coach ? ' (' + t('для себя') + ')' : '') + '.pdf' };
   };
   const run = (btn, fn) => withBusy(btn, async () => { const r = await make(); await fn(r); }, { busy: t('Готовлю PDF…'), ok: t('Готово') });
-  $('#ip_share', sh).onclick = function () { run(this, r => shareFile(r.blob, r.name, it.title)); };
+  $('#ip_share', sh).onclick = function () { run(this, r => { closeSheet(); shareMenu(blobSrc(r.blob, r.name, it.title)); }); };
   $('#ip_dl', sh).onclick = function () { run(this, r => downloadBlob(r.blob, r.name)); };
   $('#ip_open', sh).onclick = function () { run(this, r => window.open(URL.createObjectURL(r.blob), '_blank')); };
 }
@@ -143,13 +161,29 @@ async function buildItemPdf(it, o) {
   if (o.desc && (it.desc || it.goals)) { c.push(H(isM ? t('Заметки и цели') : t('Описание'))); if (it.goals) c.push({ text: String(it.goals), margin: [0, 0, 0, 4] }); if (it.desc) c.push({ text: it.desc }); }
   if (o.people) {
     if ((it.participants || []).length) { c.push(H(t('Участники'))); c.push(bl(it.participants)); }
-    if ((it.locations || []).length) { c.push(H(t('Места'))); c.push({ ul: it.locations.map(p => ({ text: [{ text: placeTitle(p), bold: true }, p.address ? '\n' + p.address : '', p.note ? '\n' + p.note : '', placeUrl(p) ? { text: '\n' + placeUrl(p), color: '#1d4ed8', link: placeUrl(p), fontSize: 8 } : ''] })) }); }
+    if ((it.locations || []).length) { c.push(H(t('Места'))); it.locations.forEach(p => c.push(pdfPlace(p))); }
   }
+  if (o.contacts) { const cs = (it.contactIds || []).map(getItem).filter(x => x && !x.deleted); if (cs.length) { c.push(H(t('Контакты участников'))); cs.forEach(x => c.push(pdfContactCard(x))); } }
   if (o.subs && (it.subtasks || []).length) { c.push(H(t('Подзадачи'))); c.push({ ul: it.subtasks.map(x => ({ text: (x.done ? '✓ ' : '') + x.text + (x.due ? '  (' + t('срок') + ' ' + D.num(x.due) + (x.time ? ' ' + x.time : '') + ')' : ''), color: x.done ? '#888' : '#222', decoration: x.done ? 'lineThrough' : undefined })) }); }
   if (o.sum && it.summary) {
     c.push(H(t('Итоги встречи')));
-    [['Кратко', s.short], ['Важная информация', s.important], ['Решения', s.decisions], ['Обязательства', s.commitments], ['Сроки', s.deadlines], ['Риски и нерешённое', s.risks], ['Следующие шаги', s.next]]
+    [['Кратко', s.short], ['Планы и этапы', s.plans], ['Цифры и суммы', s.numbers], ['Важная информация', s.important], ['Решения', s.decisions], ['Обязательства', s.commitments], ['Сроки', s.deadlines], ['Риски и нерешённое', s.risks], ['Открытые вопросы', s.questions], ['Следующие шаги', s.next]]
       .forEach(([l, a]) => { if ((a || []).length) { c.push({ text: t(l), bold: true, margin: [0, 4, 0, 2] }); c.push(bl(a)); } });
+    if ((s.topics || []).length) {
+      c.push(H(t('Темы встречи')));
+      s.topics.forEach(x => { c.push({ text: x.title || '', bold: true, margin: [0, 5, 0, 2] }); c.push(bl(x.points)); if (x.result) c.push({ text: t('Итог') + ': ' + x.result, italics: true, margin: [0, 0, 0, 4] }); });
+    }
+    if ((s.positions || []).length) { c.push({ text: t('Позиции участников'), bold: true, margin: [0, 6, 0, 2] }); c.push(bl(s.positions.map(x => (x.who ? x.who + ': ' : '') + (x.stance || '')))); }
+  }
+  if (o.coach && it.coach) {
+    const k = it.coach, V = { good: t('Сильно'), weak: t('Слабо'), off: t('Не в тему'), wrong: t('Ошибка') };
+    c.push({ text: t('Личный разбор — только для меня'), style: 'h2', pageBreak: 'before', color: '#b91c1c' });
+    if (k.score) c.push({ text: t('Оценка') + ': ' + k.score + '/10', bold: true });
+    if (k.overall) c.push({ text: k.overall, margin: [0, 2, 0, 6] });
+    if (k.confidence) { c.push({ text: t('Уверенность'), bold: true, margin: [0, 4, 0, 2] }); c.push({ text: k.confidence }); }
+    [['Сильные стороны', k.strengths], ['Слабые стороны', k.weaknesses]].forEach(([l, a]) => { if ((a || []).length) { c.push({ text: t(l), bold: true, margin: [0, 6, 0, 2] }); c.push(bl(a)); } });
+    if ((k.moments || []).length) { c.push({ text: t('Разбор моментов'), bold: true, margin: [0, 6, 0, 2] }); k.moments.forEach(x => c.push({ stack: [{ text: (V[x.verdict] || V.weak) + (x.time ? ' · ' + x.time : ''), bold: true, fontSize: 9, color: x.verdict === 'good' ? '#15803d' : x.verdict === 'wrong' ? '#b91c1c' : '#c2410c' }, x.quote ? { text: '«' + x.quote + '»', italics: true, color: '#555' } : '', x.comment || '', x.better ? { text: t('Лучше') + ': ' + x.better, color: '#15803d' } : ''].filter(Boolean), margin: [0, 3, 0, 5] })); }
+    [['Что сделать сейчас, чтобы исправить', k.fix], ['На следующие встречи', k.advice]].forEach(([l, a]) => { if ((a || []).length) { c.push({ text: t(l), bold: true, margin: [0, 6, 0, 2] }); c.push(bl(a)); } });
   }
   if (o.made && (it.proposed || []).length) { c.push(H(t('Задачи и встречи из итогов'))); c.push(bl(it.proposed.map(x => (x.type === 'meeting' ? t('Встреча') + ': ' : '') + x.title + (x.date ? ' — ' + D.num(x.date) + (x.start ? ' ' + x.start : '') : '') + (x.state === 'created' ? ' ✓' : '')))); }
   if (o.files) {
@@ -157,6 +191,12 @@ async function buildItemPdf(it, o) {
     if ((it.links || []).length) { c.push(H(t('Ссылки'))); c.push({ ul: it.links.map(l => ({ text: (l.title || l.url) + (l.title ? ' — ' + l.url : ''), link: l.url, color: '#1d4ed8' })) }); }
   }
   if (o.res && it.result) { c.push(H(t('Результат'))); if (it.result.note) c.push({ text: it.result.note }); if ((it.result.files || []).length) c.push(bl(it.result.files.map(f => f.name))); }
+  if (o.photos) {
+    const pics = pdfPhotos(it, (it.contactIds || []).map(getItem).filter(x => x && !x.deleted));
+    const imgs = [];
+    for (const p of pics) { try { const b = await getFileBlob(p.f); if (b) imgs.push({ cap: p.cap, data: await imgData(b) }); } catch (e) { } }
+    if (imgs.length) { c.push({ text: t('Фото'), style: 'h2', pageBreak: 'before' }); imgs.forEach(x => { c.push({ text: x.cap, bold: true, margin: [0, 6, 0, 3] }); c.push({ image: x.data, fit: [515, 680], alignment: 'center', margin: [0, 0, 0, 10] }); }); }
+  }
   if (o.tr && it.transcript) { c.push({ text: t('Стенограмма'), style: 'h2', pageBreak: 'before' }); c.push({ text: it.transcript, fontSize: 9, lineHeight: 1.25 }); }
   const dd = {
     pageSize: 'A4', pageMargins: [40, 40, 40, 44], defaultStyle: { font: 'Roboto', fontSize: 10.5, lineHeight: 1.2 }, content: c,
@@ -312,4 +352,118 @@ function calShift(n) {
   if (v === 'month') { const d = D.parse(S.selDate); d.setDate(1); d.setMonth(d.getMonth() + n); S.selDate = D.fmt(d); }
   else S.selDate = D.add(S.selDate, v === 'week' ? n * 7 : n);
   S.scrollCal = true; render();
+}
+
+/* ================= «Поделиться»: one menu for every file (v3.7) =================
+   phone: the Android menu (Telegram, WhatsApp… with the real file)
+   computer: Windows' menu rarely lists Telegram/WhatsApp — so there are ways that always work:
+   the file to your own Telegram (then «Forward»), or a temporary link for WhatsApp / Telegram */
+const isPhone = () => !!NATIVE || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent);
+const LINK_DAYS = 3;
+function fileSrc(holderId, fileId) {
+  const { it, f } = findFile(holderId, fileId); if (!f) return null;
+  const isRec = fileId === 'rec';
+  const meta = isRec ? { id: it.recording.fileId, cloud: it.recording.cloud, parts: it.recording.parts, type: f.type, size: it.recording.size } : f;
+  return {
+    name: f.name, title: it.title, type: f.type, isAudio: isRec || /^audio\//.test(f.type || ''), meta,
+    getBlob: async () => {
+      const b = await getFileBlob(meta);
+      if (!b) throw new Error(t('Файл есть только на другом устройстве. Войдите в облако и синхронизируйте.'));
+      return f.type && b.type !== f.type ? new Blob([b], { type: f.type }) : b;
+    },
+    onMeta: async m => { if (isRec) { it.recording.cloud = m.cloud; if (m.parts) it.recording.parts = m.parts; } await saveItem(it, { render: false }); }
+  };
+}
+function shareStored(holderId, fileId) { const s = fileSrc(holderId, fileId); if (s) shareMenu(s); }
+function blobSrc(blob, name, title) { return { name, title: title || name, type: blob.type || 'application/octet-stream', isAudio: /^audio\//.test(blob.type || ''), getBlob: async () => blob }; }
+
+/* the file must be in your cloud folder: the bot and the link take it from there */
+async function cloudRef(src) {
+  if (!window.Cloud || !Cloud.sb || !Cloud.user) throw new Error(t('Войдите в аккаунт (Настройки → Облако)'));
+  if (src.meta) {
+    const f = src.meta;
+    if (!f.cloud) {
+      await Cloud.uploadFile(f);
+      if (!f.cloud) throw new Error(t('Не удалось загрузить файл в облако') + (f.cloudErr ? ': ' + f.cloudErr : ''));
+      if (src.onMeta) await src.onMeta(f);
+    }
+    return { id: f.id, parts: f.parts || 1, size: f.size || 0 };
+  }
+  if (src.tmp) return src.tmp;
+  const b = await src.getBlob();
+  if (b.size > Cloud.PART) throw new Error(t('Файл больше 40 МБ — сохраните его и отправьте файлом.'));
+  const id = 'tmp_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+  const { error } = await Cloud.sb.storage.from('files').upload(Cloud.user.id + '/' + id, b, { upsert: true, contentType: b.type || src.type });
+  if (error) throw new Error(t('Не удалось загрузить файл в облако') + ': ' + error.message);
+  cleanTmp();
+  return (src.tmp = { id, parts: 1, size: b.size });
+}
+/* temporary copies (PDF made on the fly) live a little longer than their link, then go */
+async function cleanTmp() {
+  try {
+    const { data } = await Cloud.sb.storage.from('files').list(Cloud.user.id, { search: 'tmp_', limit: 100 });
+    const old = (data || []).filter(o => /^tmp_\d+_/.test(o.name) && Date.now() - +o.name.split('_')[1] > (LINK_DAYS + 1) * 86400000);
+    if (old.length) await Cloud.sb.storage.from('files').remove(old.map(o => Cloud.user.id + '/' + o.name));
+  } catch (e) { }
+}
+async function fileToTelegram(src) {
+  if (!window.Cloud || !Cloud.user) throw new Error(t('Войдите в аккаунт (Настройки → Облако)'));
+  if (!tgReady()) throw new Error(t('Telegram не подключён (Настройки → Telegram)'));
+  const m = await cloudRef(src);
+  const esc2 = x => String(x || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const { data, error } = await Cloud.sb.functions.invoke('telegram-bot', { body: {
+    action: 'audio', kind: src.isAudio ? 'audio' : 'doc', fileId: m.id, parts: m.parts, size: m.size, mime: src.type,
+    name: String(src.name).replace(/[\\/:*?"<>|]/g, ' ').slice(0, 100), title: String(src.title || '').slice(0, 60),
+    caption: `📎 <b>${esc2(src.title || src.name)}</b>`
+  } });
+  if (error) { let msg = error.message; try { const j = error.context && await error.context.json(); if (j && j.error) msg = j.error; } catch (e) { } throw new Error(t('Не удалось отправить') + ': ' + msg); }
+  if (data && data.error) throw new Error(data.error);
+  if (data && data.tooBig) throw new Error(t('Файл больше 50 МБ — Telegram-бот не может его отправить. Сохраните файл и отправьте вручную.'));
+}
+async function fileLink(src) {
+  const m = await cloudRef(src);
+  if (m.parts > 1) throw new Error(t('Файл больше 40 МБ — ссылкой не отправить. Сохраните его и отправьте файлом.'));
+  const { data, error } = await Cloud.sb.storage.from('files').createSignedUrl(Cloud.user.id + '/' + m.id, LINK_DAYS * 86400, { download: src.name });
+  if (error || !data) throw new Error(t('Не удалось сделать ссылку') + (error ? ': ' + error.message : ''));
+  return data.signedUrl;
+}
+function openOut(url, box) {
+  if (NATIVE) { window.open(url, '_blank'); return; }   // the Android app opens WhatsApp / Telegram itself
+  const w = window.open(url, '_blank', 'noopener');
+  if (!w && box) box.innerHTML = `<a class="btn pri full" href="${esc(url)}" target="_blank" rel="noopener">${t('Открыть')} →</a>`;   // pop-up was blocked — one more tap
+}
+
+async function shareMenu(src) {
+  let bp = null; const blob = () => bp || (bp = src.getBlob());
+  blob().catch(() => { });   // start loading now, so the buttons are instant
+  const phone = isPhone();
+  const sh = openSheet(`
+    <div class="sh-h">${ic('share', 20)}<b>${t('Поделиться')}</b><button class="xbtn" onclick="closeSheet()">${ic('x', 18)}</button></div>
+    <div class="hint" style="margin-top:-8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(src.name)}</div>
+    <button class="btn pri full" style="margin-top:10px" id="sm_sys">${ic('share', 18)} ${phone ? t('Telegram, WhatsApp… — выбрать, кому') : t('Меню «Поделиться» Windows')}</button>
+    <div class="hint sm-h">${phone ? t('Откроется список приложений: выберите Telegram или WhatsApp, затем человека. Уйдёт сам файл.') : t('Telegram и WhatsApp будут в этом меню, только если они установлены на компьютер как программы. Если их нет — используйте кнопки ниже.')}</div>
+    <button class="btn ghost full" id="sm_tg">${ic('tg', 18)} ${t('Прислать мне в Telegram')}</button>
+    <div class="hint sm-h">${t('Файл придёт в ваш чат с ботом. Там: зажмите сообщение → «Переслать» → выберите человека.')}</div>
+    <div class="btns"><button class="btn ghost" id="sm_wa">${ic('wa', 18)} ${t('Ссылкой в WhatsApp')}</button><button class="btn ghost" id="sm_tgl">${ic('tg', 18)} ${t('Ссылкой в Telegram')}</button></div>
+    <div class="hint sm-h">${t('Человек получит ссылку и скачает файл. Ссылка работает {n} дня — у любого, кому она попадёт. Для конфиденциальных документов лучше отправлять сам файл.', { n: LINK_DAYS })}</div>
+    <div id="sm_out"></div>
+    <button class="btn ghost full" id="sm_dl">${ic('download', 18)} ${phone ? t('Сохранить в телефон') : t('Скачать на компьютер')}</button>
+    ${phone ? '' : `<div class="hint sm-h">${t('Файл скачается — вверху окна появится значок загрузки ⬇. Нажмите на него и перетащите файл мышкой прямо в чат Telegram или WhatsApp.')}</div>`}`);
+  const out = $('#sm_out', sh);
+  $('#sm_sys', sh).onclick = async function () {
+    let b; try { b = await blob(); } catch (e) { return toast(e.message, 5000); }
+    await shareFile(b, src.name, src.title);
+  };
+  $('#sm_tg', sh).onclick = async function () {
+    const ok = await withBusy(this, () => fileToTelegram(src), { busy: t('Отправляю…'), ok: t('Отправлено') });
+    if (ok) out.innerHTML = `<div class="tg-state okc">✓ ${t('Файл в Telegram: чат с ботом')}${cfg.bot ? ' @' + esc(cfg.bot) : ''}. ${t('Зажмите его → «Переслать».')}</div>`;
+    else if (!tgReady()) out.innerHTML = `<div class="tg-state bad">⚠ ${t('Сначала подключите Telegram: Настройки → Telegram.')}</div>`;
+  };
+  const link = (btn, make) => withBusy(btn, async () => { const u = await fileLink(src); openOut(make(u), out); }, { busy: t('Делаю ссылку…'), ok: t('Готово') });
+  $('#sm_wa', sh).onclick = function () { link(this, u => 'https://wa.me/?text=' + encodeURIComponent('📎 ' + src.name + '\n' + u)); };
+  $('#sm_tgl', sh).onclick = function () { link(this, u => 'https://t.me/share/url?url=' + encodeURIComponent(u) + '&text=' + encodeURIComponent('📎 ' + src.name)); };
+  $('#sm_dl', sh).onclick = async function () {
+    let b; try { b = await blob(); } catch (e) { return toast(e.message, 5000); }
+    downloadBlob(b, src.name); if (!NATIVE) toast(t('Файл сохранён в «Загрузки»'));
+  };
 }

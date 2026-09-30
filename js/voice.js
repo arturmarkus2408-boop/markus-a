@@ -32,7 +32,7 @@ function openVoice(mode = 'command') {
       <div class="vo-h" id="vo_h">${SR ? t('Говорите…') : t('Напишите команду')}</div>
       <button class="vo-mic ${SR ? 'on' : ''}" id="vo_mic" onclick="voiceMicToggle()"><i>${ic('mic', 44)}</i></button>
       <div class="vo-heard" id="vo_heard"></div>
-      <div class="vo-box" id="vo_ex"><b>${t('Например:')}</b>${mode === 'note' ? t('«Проверить договор до пятницы и позвонить бухгалтеру»') : [t('«Завтра в 14:00 встреча с Алишером на час»'), t('«Напомни через два часа позвонить бухгалтеру»'), t('«Что у меня сегодня после обеда?»'), t('«Найди свободное окно на полтора часа до пятницы»')].join('<br>')}</div>
+      <div class="vo-box" id="vo_ex"><b>${t('Например:')}</b>${mode === 'note' ? t('«Проверить договор до пятницы и позвонить бухгалтеру»') : [t('«Завтра в 14:00 встреча с Алишером на час»'), t('«30 сентября в 21:00 напомни, что 1 октября день рождения у Жужика»'), t('«Напомни через два часа позвонить бухгалтеру»'), t('«Что у меня сегодня после обеда?»'), t('«Найди свободное окно на полтора часа до пятницы»')].join('<br>')}</div>
       <div class="vo-box" id="vo_steps" hidden></div>
       <div class="vo-inp"><input id="vo_text" placeholder="${t('…или напишите здесь')}" onkeydown="if(event.key==='Enter')voiceSubmit()"><button onclick="voiceSubmit()" aria-label="${t('Отправить')}">${ic('send', 18)}</button></div>
       <button class="btn dk-ghost" onclick="closeVoice()">${t('Отменить')}</button>
@@ -98,6 +98,7 @@ async function handleCommand(text, o = {}) {
   closeVoice();
   if (o.forceCreate && !['create_task', 'create_meeting'].includes(p.intent)) p.intent = 'create_task';
   switch (p.intent) {
+    case 'create_reminder': return reminderFlow(p, text);
     case 'create_task': case 'create_meeting': return createFlow(p, text);
     case 'create_note': {
       const n = newItem('note', { title: p.title || (p.noteText || text).slice(0, 60), desc: p.noteText || text });
@@ -176,6 +177,46 @@ async function createFlow(p, text) {
   const v = await dialog({ title: kind === 'meeting' ? t('Создать встречу?') : t('Создать задачу?'), text: info, buttons: [{ l: t('Создать'), v: 'ok', p: 1 }, { l: t('Изменить детали'), v: 'edit' }, { l: t('Отмена'), v: null }] });
   if (v === 'ok') { await saveItem(d); toast(t('Создано ✓')); speak((kind === 'meeting' ? t('Встреча создана') : t('Задача создана')) + ': ' + (d.date ? D.human(d.date) : '') + (d.start ? ' ' + t('в {t}', { t: d.start }) : '')); }
   else if (v === 'edit') openEditor(kind, d);
+}
+/* ================= «напомни…» — one card, one tap «Сохранить» ================= */
+function isBirthday(x) { return /д(ень|\.)\s*р(ождени|\.)|днюх|юбилей|годовщин|birthday|anniversary|tug['ʻ’]?ilgan kun|doğum günü|geburtstag/i.test(String(x || '')); }
+async function reminderFlow(p, text) {
+  const ev = p.event && p.event.date ? p.event : null;
+  const bday = !!(ev && ['birthday', 'anniversary'].includes(ev.type)) || isBirthday(p.title || text);
+  let title = cap(p.title || text);
+  if (bday && !/^\p{Extended_Pictographic}/u.test(title)) title = '🎂 ' + title;
+  let at = p.remindAt ? new Date(p.remindAt) : null; if (at && isNaN(at)) at = null;
+  if (!at) {
+    const td = D.today(), opts = [];
+    if (ev) {
+      if (D.add(ev.date, -1) >= td) opts.push({ l: t('Накануне в {t}', { t: '21:00' }) + ' (' + D.human(D.add(ev.date, -1)) + ')', v: D.add(ev.date, -1) + 'T21:00', p: 1 });
+      opts.push({ l: t('В тот день в {t}', { t: '09:00' }) + ' (' + D.human(ev.date) + ')', v: ev.date + 'T09:00', p: 1 });
+    } else {
+      opts.push({ l: t('Через час'), v: (() => { const d = new Date(Date.now() + 3600000); return D.fmt(d) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()); })(), p: 1 });
+      opts.push({ l: t('Сегодня вечером') + ' ' + (S.set.eveTime || '19:00'), v: td + 'T' + (S.set.eveTime || '19:00'), p: 1 });
+      opts.push({ l: t('Завтра утром') + ' ' + S.set.morningTime, v: D.add(td, 1) + 'T' + S.set.morningTime });
+    }
+    const v = await askChoice(t('Когда напомнить?'), esc(title), opts, { type: 'datetime-local', label: t('Выбрать дату и время') });
+    if (!v) return;
+    at = new Date(v); if (isNaN(at)) return;
+  }
+  const hm = pad(at.getHours()) + ':' + pad(at.getMinutes());
+  const d = newItem('task', { title, date: D.fmt(at), start: hm, end: hm, reminders: [0], reminder: true, priority: ['normal', 'high', 'critical'].includes(p.priority) ? p.priority : 'normal', category: matchCat(p.category, 'task') });
+  if (ev) d.eventDate = ev.date;
+  const yearly0 = bday || !!p.yearly;
+  const info = `<b>${esc(title)}</b><br>🔔 ${t('Напомню')}: ${esc(D.human(d.date))}, ${hm}${ev ? '<br>📅 ' + t('Событие') + ': ' + esc(D.long(ev.date)) : ''}
+    <div class="hint" style="margin-top:6px">${NATIVE ? t('Придёт уведомление на телефон') : t('Придёт уведомление на это устройство')}${tgReady() ? ' ' + t('и сообщение в Telegram') : ''}.</div>`;
+  const v = await dialog({
+    title: t('Сохранить напоминание?'), text: info,
+    html: `<div class="sw-row"><div><b>${t('Повторять каждый год')}</b><span>${t('Дни рождения, годовщины, праздники')}</span></div><button class="sw ${yearly0 ? 'on' : ''}" id="rm_y" onclick="this.classList.toggle('on')"></button></div>`,
+    buttons: [{ l: t('Сохранить'), v: sh => ({ y: $('#rm_y', sh).classList.contains('on') }), p: 1 }, { l: t('Изменить детали'), v: 'edit' }, { l: t('Отмена'), v: null }]
+  });
+  if (!v) return;
+  if (v === 'edit') return openEditor('task', d);
+  if (v.y) d.repeat = { type: 'yearly' };
+  await saveItem(d);
+  toast(t('Напоминание сохранено ✓') + ' ' + D.human(d.date) + ' ' + hm, 3500);
+  speak(t('Напомню') + ' ' + D.human(d.date) + ' ' + t('в {t}', { t: hm }));
 }
 async function queryFlow(p) {
   const q = p.query || {}, td = D.today();
@@ -450,6 +491,21 @@ async function recoverRecording() {
 
 /* ================= AI processing of meetings ================= */
 const Processing = new Set();
+/* «Обработать заново»: rebuild only the summary, or transcribe the recording again (if the text is incomplete) */
+async function redoMeeting(id) {
+  const m = getItem(id); if (!m) return;
+  if (!m.transcript) return processMeeting(id);
+  const dur = +(m.recording && m.recording.duration) || 0;
+  const stamps = (m.transcript.match(/^\[(\d+:)?\d{2}:\d{2}\]$/gm) || []).length;
+  const words = m.transcript.split(/\s+/).length, perMin = dur ? Math.round(words / (dur / 60)) : 0;
+  const thin = dur > 20 * 60 && perMin < 60;   // people say 100–150 words a minute: much less = the text was cut
+  const v = await dialog({
+    title: t('Обработать заново'),
+    text: esc(t('Стенограмма: {w} слов на {d} записи.', { w: words, d: fmtDur(dur) })) + (thin ? '<br><b style="color:var(--red)">' + esc(t('Похоже, стенограмма неполная — лучше расшифровать заново.')) + '</b>' : ''),
+    buttons: [{ l: t('Расшифровать заново и сделать итоги'), v: 'full', p: thin || !stamps }, { l: t('Только переделать итоги и разбор'), v: 'reuse', p: !thin && !!stamps }, { l: t('Отмена'), v: null }]
+  });
+  if (v) processMeeting(id, { reuse: v === 'reuse', again: true });
+}
 async function processMeeting(id, o = {}) {
   const m = getItem(id); if (!m || !m.recording) return;
   if (!AI.ready()) return toast(t('Добавьте ключ Gemini в Настройках → AI'), 4000);
@@ -462,23 +518,39 @@ async function processMeeting(id, o = {}) {
   }
   const step = (txt) => { if (sh) { $('#pm_1', sh).className = 'ok'; $('#pm_2', sh).className = 'spin'; $('#pm_s', sh).textContent = txt; } };
   try {
-    const blob = await getFileBlob({ id: m.recording.fileId, cloud: m.recording.cloud, parts: m.recording.parts, type: m.recording.mime });
-    if (!blob) throw new Error(t('Аудиофайл не найден на этом устройстве'));
-    m.transcript = await AI.transcribe(blob, m.recording.mime, m, pct => sh && ($('#pm_s', sh).textContent = t('Загружаю запись для AI… {p}%', { p: pct })));
-    await saveItem(m, { render: false });
-    step(t('Анализирую: решения, обязательства, сроки, задачи…'));
+    if (!(o.reuse && m.transcript)) {
+      const blob = await getFileBlob({ id: m.recording.fileId, cloud: m.recording.cloud, parts: m.recording.parts, type: m.recording.mime });
+      if (!blob) throw new Error(t('Аудиофайл не найден на этом устройстве'));
+      m.transcript = await AI.transcribe(blob, m.recording.mime, m,
+        pct => sh && ($('#pm_s', sh).textContent = t('Загружаю запись для AI… {p}%', { p: pct })),
+        (k, n) => sh && ($('#pm_s', sh).textContent = t('Расшифровываю запись: часть {k} из {n} (по 10 минут)…', { k, n })));
+      await saveItem(m, { render: false });
+    }
+    step(t('Анализирую: темы, планы, цифры, решения, задачи…'));
     const a = await AI.analyzeMeeting(m);
     m.summary = a.summary || {};
     const items = Array.isArray(a.items) ? a.items : (a.tasks || []);
-    m.proposed = items.filter(x => x && x.title).map(x => Object.assign({ type: 'task' }, x, { state: 'new' }));
+    // re-processing must not create the same tasks again
+    const before = (m.proposed || []).filter(x => x.state === 'created' || x.state === 'skipped');
+    const key = x => String(x.title || '').toLowerCase().replace(/[^a-zа-яё0-9ўқғҳ]+/gi, ' ').trim();
+    m.proposed = items.filter(x => x && x.title).map(x => { const old = before.find(b => key(b) === key(x)); return Object.assign({ type: 'task' }, x, old ? { state: old.state, itemId: old.itemId } : { state: 'new' }); });
+    before.filter(b => !m.proposed.some(x => key(x) === key(b))).forEach(b => m.proposed.push(b));
+    // my own review — separately, so a problem here never spoils the summary
+    if (S.set.coach !== false && !m.emergency) {
+      if (sh) $('#pm_s', sh).textContent = t('Готовлю разбор: как вы провели встречу…');
+      try { m.coach = await AI.coachMeeting(m); m.coach.at = new Date().toISOString(); } catch (e) { m.coachErr = e.message; }
+    }
+    delete m.aiError;
     await saveItem(m);
     if (entry) { entry.locked = false; closeSheet(); }
     S.meetTab = 'short'; if (S.route === 'meeting' && S.meetingId === id) render();
     let created = { tasks: 0, meetings: 0 };
     if (m.proposed.length) {
-      if (S.set.autoTasks === 'auto') created = await reviewProposed(id, true, true);
+      if (!m.proposed.some(x => x.state === 'new')) { }
+      else if (S.set.autoTasks === 'auto' && !o.reuse && !o.again) created = await reviewProposed(id, true, true);
       else if (!o.auto) {
-        const v = await dialog({ title: t('Найдено новых задач: {n}. Создать?', { n: m.proposed.length }), text: m.proposed.map(x => '• ' + esc(x.title) + (x.date ? ' — ' + D.human(x.date) + (x.start || x.dueTime ? ', ' + (x.start || t('до {t}', { t: x.dueTime })) : '') : '')).join('<br>'), buttons: [{ l: t('Создать все'), v: 'all', p: 1 }, { l: t('Проверить по одной'), v: 'one' }, { l: t('Позже'), v: null }] });
+        const fresh = m.proposed.filter(x => x.state === 'new');
+        const v = await dialog({ title: t('Найдено новых задач: {n}. Создать?', { n: fresh.length }), text: fresh.map(x => '• ' + esc(x.title) + (x.date ? ' — ' + D.human(x.date) + (x.start || x.dueTime ? ', ' + (x.start || t('до {t}', { t: x.dueTime })) : '') : '')).join('<br>'), buttons: [{ l: t('Создать все'), v: 'all', p: 1 }, { l: t('Проверить по одной'), v: 'one' }, { l: t('Позже'), v: null }] });
         if (v === 'all') created = await reviewProposed(id, true);
         else if (v === 'one') created = await reviewProposed(id, false);
       }

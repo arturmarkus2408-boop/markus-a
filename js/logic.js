@@ -90,7 +90,7 @@ function isOpen(it) { return isTaskKind(it) && !it.deleted && it.status !== 'don
 function startAt(it) { return it.date ? D.dt(it.date, it.start || '00:00') : null; }
 function endAt(it) { return effectiveEndAt(it); }
 function isOverdue(it) {
-  if (!isOpen(it) || !it.date) return false;
+  if (!isOpen(it) || !it.date || it.reminder) return false;   // a reminder is never «overdue» — it just rang
   if (overdueSubs(it).length) return true;
   const now = Date.now();
   const future = (it.subtasks || []).some(s => !s.done && (isBlocked(it, s) || (s.due && subDueAt(s).getTime() >= now)));
@@ -242,26 +242,71 @@ function nextOccurrence(it) {
   }
   return D.fmt(d);
 }
+/* v3.8: «done» on a repeating task asks what to do. Before, the next copy was made silently — with
+   all the files — so reminders never stopped and documents "moved" from day to day. */
+async function askRepeat(it, nd) {
+  const keep = it.reminder || it.repeat.type === 'yearly';   // birthdays, anniversaries: keep going by default
+  const when = D.human(nd) + (it.start ? ' ' + t('в {t}', { t: it.start }) : '');
+  return dialog({
+    title: t('Это повторяющаяся задача'),
+    text: esc(t('Повтор: {r}. Следующий раз — {d}.', { r: t(REPEAT[it.repeat.type] || ''), d: when })),
+    buttons: keep
+      ? [{ l: t('Напомнить снова {d}', { d: when }), v: 'next', p: 1 }, { l: t('Больше не повторять'), v: 'end' }, { l: t('Отмена'), v: null }]
+      : [{ l: t('Выполнено — больше не повторять'), v: 'end', p: 1 }, { l: t('Выполнено — повторить {d}', { d: when }), v: 'next' }, { l: t('Отмена'), v: null }]
+  });
+}
 async function setStatus(it, st, opt = {}) {
   const was = it.status;
+  const rep = st === 'done' && was !== 'done' && it.repeat && it.repeat.type !== 'none' && it.date;
+  const nd = rep ? nextOccurrence(it) : null;
+  let how = null;
+  if (rep && nd) {
+    how = opt.repeat || await askRepeat(it, nd);
+    if (!how) return false;   // «Отмена» — nothing changes
+  }
+  // a reminder (birthday…) is one card that simply moves to its next date — no copies
+  if (how === 'next' && it.reminder) {
+    const shift = D.diffDays(it.date, nd);
+    Object.assign(it, { date: nd, status: 'todo', doneAt: null, customRemind: null });
+    (it.subtasks || []).forEach(s => { s.done = false; s.doneAt = null; if (s.due) s.due = D.add(s.due, shift); });
+    await saveItem(it);
+    toast(t('Следующее напоминание: {d}', { d: D.human(nd) }), 3500);
+    return true;
+  }
   it.status = st;
   if (st === 'done') it.doneAt = new Date().toISOString();
   if (st === 'cancelled') { it.cancelledAt = new Date().toISOString(); it.cancelPct = progress(it) || 0; if (opt.reason != null) it.cancelReason = opt.reason; }
   if (st !== 'cancelled' && was === 'cancelled') { it.cancelReason = ''; it.cancelledAt = null; }
-  if (st === 'done' && was !== 'done' && it.repeat && it.repeat.type !== 'none' && it.date) {
-    const nd = nextOccurrence(it);
-    if (nd) {
-      const n = clone(it);
-      const shift = D.diffDays(it.date, nd);
-      Object.assign(n, { id: uid(), date: nd, status: 'todo', doneAt: null, created: new Date().toISOString(), recording: null, transcript: '', summary: null, proposed: [], customRemind: null });
-      n.subtasks = (n.subtasks || []).map(s => Object.assign({}, s, { done: false, doneAt: null, due: s.due ? D.add(s.due, shift) : null }));
-      delete n._dirty;
-      await saveItem(n, { render: false });
-      it.repeat = { type: 'none' };
-      toast(t('Следующий повтор: {d}', { d: D.human(nd) }));
-    }
+  if (st === 'done' || st === 'cancelled') it.customRemind = null;   // a snoozed reminder must not come back
+  if (how === 'next') {
+    const n = clone(it);
+    const shift = D.diffDays(it.date, nd);
+    // the next time starts clean: no documents, no result, no recording — they stay with the finished one
+    Object.assign(n, { id: uid(), seriesId: it.seriesId || it.id, date: nd, status: 'todo', doneAt: null, created: new Date().toISOString(), recording: null, transcript: '', summary: null, proposed: [], customRemind: null, files: [], result: null, });
+    n.subtasks = (n.subtasks || []).map(s => Object.assign({}, s, { done: false, doneAt: null, due: s.due ? D.add(s.due, shift) : null }));
+    delete n._dirty;
+    await saveItem(n, { render: false });
+    toast(t('Следующий повтор: {d}', { d: D.human(nd) }));
   }
+  if (rep) { it.repeat = { type: 'none' }; if (how === 'end') toast(t('Повторы остановлены — напоминаний по этой задаче больше не будет'), 4000); }
   await saveItem(it);
+  return true;
+}
+/* a repeating reminder (birthday…) that was not ticked off moves to its next date by itself
+   half a day after it rang — every device computes the same date, so there are never copies */
+async function rollReminders() {
+  const lim = Date.now() - 12 * 3600000;
+  for (const it of S.items) {
+    if (!it.reminder || it.deleted || !isOpen(it) || !it.date) continue;
+    if (!it.repeat || it.repeat.type === 'none') {   // a one-time reminder is finished half a day after it rang
+      if (D.dt(it.date, it.start || '09:00').getTime() <= lim) { it.status = 'done'; it.doneAt = new Date().toISOString(); await saveItem(it, { render: false }); }
+      continue;
+    }
+    let at = D.dt(it.date, it.start || '09:00').getTime(), d = it.date, g = 0;
+    if (at > lim) continue;
+    while (at <= lim && g++ < 400) { const nx = nextOccurrence(Object.assign({}, it, { date: d })); if (!nx) break; d = nx; at = D.dt(d, it.start || '09:00').getTime(); }
+    if (d !== it.date) { it.date = d; it.customRemind = null; await saveItem(it, { render: false }); }
+  }
 }
 async function askCancelReason(it) {
   const v = await dialog({
@@ -285,7 +330,7 @@ async function toggleDone(id) {
     if (v !== 'all') return;
     open.forEach(s => { s.done = true; s.doneAt = new Date().toISOString(); });
   }
-  await setStatus(it, 'done'); toast(t('Готово ✓'));
+  if (await setStatus(it, 'done')) toast(t('Готово ✓'));
 }
 
 /* ---------- smart rescheduling ---------- */

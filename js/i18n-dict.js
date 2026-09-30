@@ -42,3 +42,913 @@ Object.assign(window.I18N_DICT.en, {"Автозапись на этом теле
 Object.assign(window.I18N_DICT.uz, {"Автозапись на этом телефоне": "Shu telefonda avtoyozuv", "Если MARKUS-A стоит на двух телефонах, оставьте включённым только на том, который берёте на встречи — иначе встреча запишется дважды.": "Agar MARKUS-A ikki telefonda bo‘lsa, faqat uchrashuvga olib boradigan telefonda yoqilgan qoldiring — aks holda uchrashuv ikki marta yoziladi."});
 Object.assign(window.I18N_DICT.tr, {"Автозапись на этом телефоне": "Bu telefonda otomatik kayıt", "Если MARKUS-A стоит на двух телефонах, оставьте включённым только на том, который берёте на встречи — иначе встреча запишется дважды.": "MARKUS-A iki telefondaysa, yalnızca toplantılara götürdüğünüz telefonda açık bırakın — aksi halde toplantı iki kez kaydedilir."});
 Object.assign(window.I18N_DICT.de, {"Автозапись на этом телефоне": "Auto-Aufnahme auf diesem Telefon", "Если MARKUS-A стоит на двух телефонах, оставьте включённым только на том, который берёте на встречи — иначе встреча запишется дважды.": "Ist MARKUS-A auf zwei Telefonen, lassen Sie dies nur auf dem Telefon an, das Sie zu Terminen mitnehmen — sonst wird der Termin doppelt aufgenommen."});
+/* v3.7 — share menu */
+(function () {
+  const T = {
+    "Не удалось загрузить файл в облако": ["Could not upload the file to the cloud", "Faylni bulutga yuklab bo‘lmadi", "Dosya buluta yüklenemedi", "Datei konnte nicht in die Cloud hochgeladen werden"],
+    "Файл больше 40 МБ — сохраните его и отправьте файлом.": ["The file is over 40 MB — save it and send it as a file.", "Fayl 40 MB dan katta — saqlab, fayl sifatida yuboring.", "Dosya 40 MB'tan büyük — kaydedip dosya olarak gönderin.", "Die Datei ist größer als 40 MB — speichern und als Datei senden."],
+    "Файл больше 50 МБ — Telegram-бот не может его отправить. Сохраните файл и отправьте вручную.": ["The file is over 50 MB — the Telegram bot cannot send it. Save it and send it manually.", "Fayl 50 MB dan katta — Telegram-bot uni yubora olmaydi. Saqlab, o‘zingiz yuboring.", "Dosya 50 MB'tan büyük — Telegram botu gönderemez. Kaydedip elle gönderin.", "Die Datei ist größer als 50 MB — der Telegram-Bot kann sie nicht senden. Speichern und manuell senden."],
+    "Файл больше 40 МБ — ссылкой не отправить. Сохраните его и отправьте файлом.": ["The file is over 40 MB — it can't be sent as a link. Save it and send it as a file.", "Fayl 40 MB dan katta — havola bilan yuborib bo‘lmaydi. Saqlab, fayl sifatida yuboring.", "Dosya 40 MB'tan büyük — bağlantı ile gönderilemez. Kaydedip dosya olarak gönderin.", "Die Datei ist größer als 40 MB — kein Versand per Link. Speichern und als Datei senden."],
+    "Не удалось сделать ссылку": ["Could not create the link", "Havola yaratib bo‘lmadi", "Bağlantı oluşturulamadı", "Link konnte nicht erstellt werden"],
+    "Telegram, WhatsApp… — выбрать, кому": ["Telegram, WhatsApp… — choose who", "Telegram, WhatsApp… — kimga ekanini tanlang", "Telegram, WhatsApp… — kime olduğunu seçin", "Telegram, WhatsApp… — Empfänger wählen"],
+    "Меню «Поделиться» Windows": ["Windows «Share» menu", "Windows «Ulashish» menyusi", "Windows «Paylaş» menüsü", "Windows-Menü «Teilen»"],
+    "Откроется список приложений: выберите Telegram или WhatsApp, затем человека. Уйдёт сам файл.": ["A list of apps opens: choose Telegram or WhatsApp, then the person. The file itself is sent.", "Ilovalar ro‘yxati ochiladi: Telegram yoki WhatsApp ni, keyin odamni tanlang. Faylning o‘zi yuboriladi.", "Uygulama listesi açılır: Telegram veya WhatsApp'ı, sonra kişiyi seçin. Dosyanın kendisi gönderilir.", "Eine App-Liste öffnet sich: Telegram oder WhatsApp wählen, dann die Person. Die Datei selbst wird gesendet."],
+    "Telegram и WhatsApp будут в этом меню, только если они установлены на компьютер как программы. Если их нет — используйте кнопки ниже.": ["Telegram and WhatsApp appear in this menu only if they are installed on the computer as programs. If not — use the buttons below.", "Telegram va WhatsApp bu menyuda faqat kompyuterga dastur sifatida o‘rnatilgan bo‘lsa chiqadi. Bo‘lmasa — pastdagi tugmalardan foydalaning.", "Telegram ve WhatsApp bu menüde yalnızca bilgisayara program olarak kuruluysa görünür. Yoksa aşağıdaki düğmeleri kullanın.", "Telegram und WhatsApp erscheinen nur in diesem Menü, wenn sie als Programme installiert sind. Sonst die Schaltflächen unten nutzen."],
+    "Прислать мне в Telegram": ["Send to my Telegram", "Menga Telegramga yuborish", "Telegram'ıma gönder", "An mein Telegram senden"],
+    "Файл придёт в ваш чат с ботом. Там: зажмите сообщение → «Переслать» → выберите человека.": ["The file arrives in your chat with the bot. There: long-press the message → «Forward» → choose the person.", "Fayl bot bilan chatingizga keladi. U yerda: xabarni bosib turing → «Uzatish» → odamni tanlang.", "Dosya botla sohbetinize gelir. Orada: mesaja basılı tutun → «İlet» → kişiyi seçin.", "Die Datei kommt in Ihren Chat mit dem Bot. Dort: Nachricht gedrückt halten → «Weiterleiten» → Person wählen."],
+    "Ссылкой в WhatsApp": ["Link via WhatsApp", "WhatsApp orqali havola", "WhatsApp ile bağlantı", "Link per WhatsApp"],
+    "Ссылкой в Telegram": ["Link via Telegram", "Telegram orqali havola", "Telegram ile bağlantı", "Link per Telegram"],
+    "Человек получит ссылку и скачает файл. Ссылка работает {n} дня — у любого, кому она попадёт. Для конфиденциальных документов лучше отправлять сам файл.": ["The person gets a link and downloads the file. The link works for {n} days — for anyone who gets it. For confidential documents, better send the file itself.", "Odam havolani oladi va faylni yuklab oladi. Havola {n} kun ishlaydi — u kimga tushsa ham. Maxfiy hujjatlar uchun faylning o‘zini yuborgan ma’qul.", "Kişi bağlantıyı alır ve dosyayı indirir. Bağlantı {n} gün çalışır — kime ulaşırsa. Gizli belgeler için dosyanın kendisini gönderin.", "Die Person erhält einen Link und lädt die Datei herunter. Der Link gilt {n} Tage — für jeden, der ihn hat. Vertrauliche Dokumente besser als Datei senden."],
+    "Скачать на компьютер": ["Download to computer", "Kompyuterga yuklab olish", "Bilgisayara indir", "Auf den Computer herunterladen"],
+    "Потом перетащите файл из папки «Загрузки» в окно Telegram или WhatsApp.": ["Then drag the file from the «Downloads» folder into the Telegram or WhatsApp window.", "Keyin faylni «Yuklanmalar» papkasidan Telegram yoki WhatsApp oynasiga sudrab olib boring.", "Sonra dosyayı «İndirilenler» klasöründen Telegram veya WhatsApp penceresine sürükleyin.", "Dann die Datei aus «Downloads» in das Telegram- oder WhatsApp-Fenster ziehen."],
+    "Файл в Telegram: чат с ботом": ["File is in Telegram: chat with the bot", "Fayl Telegramda: bot bilan chat", "Dosya Telegram'da: botla sohbet", "Datei ist in Telegram: Chat mit dem Bot"],
+    "Зажмите его → «Переслать».": ["Long-press it → «Forward».", "Uni bosib turing → «Uzatish».", "Basılı tutun → «İlet».", "Gedrückt halten → «Weiterleiten»."],
+    "Сначала подключите Telegram: Настройки → Telegram.": ["First connect Telegram: Settings → Telegram.", "Avval Telegramni ulang: Sozlamalar → Telegram.", "Önce Telegram'ı bağlayın: Ayarlar → Telegram.", "Zuerst Telegram verbinden: Einstellungen → Telegram."],
+    "Делаю ссылку…": ["Creating link…", "Havola tayyorlanmoqda…", "Bağlantı oluşturuluyor…", "Link wird erstellt…"]
+  };
+  const L = ['en', 'uz', 'tr', 'de'];
+  for (const k in T) L.forEach((l, i) => { window.I18N_DICT[l] = window.I18N_DICT[l] || {}; window.I18N_DICT[l][k] = T[k][i]; });
+})();
+/* v3.8 — sync status, repeats, reminders, meeting review, contacts, chat */
+(function () {
+  const T = {
+"Для кого этот PDF?": [
+"Who is this PDF for?",
+"Bu PDF kim uchun?",
+"Bu PDF kimin için?",
+"Für wen ist dieses PDF?"
+],
+"«Для себя» — с вашим личным разбором (сильные и слабые стороны, ошибки, рекомендации). «Для общего пользования» — без него: можно отдать клиенту, партнёру, распечатать.": [
+"«For me» — with your personal review (strengths, weaknesses, mistakes, advice). «For everyone» — without it: you can give it to a client or partner, or print it.",
+"«O‘zim uchun» — shaxsiy tahlilingiz bilan (kuchli va zaif tomonlar, xatolar, tavsiyalar). «Umumiy foydalanish uchun» — tahlilsiz: mijozga, hamkorga berish yoki chop etish mumkin.",
+"«Kendim için» — kişisel değerlendirmenizle (güçlü ve zayıf yönler, hatalar, öneriler). «Herkes için» — değerlendirme olmadan: müşteriye, ortağa verilebilir veya yazdırılabilir.",
+"«Für mich» — mit Ihrer persönlichen Auswertung (Stärken, Schwächen, Fehler, Empfehlungen). «Für alle» — ohne sie: für Mandanten, Partner oder zum Drucken."
+],
+"Для себя (с моим разбором)": [
+"For me (with my review)",
+"O‘zim uchun (tahlilim bilan)",
+"Kendim için (değerlendirmemle)",
+"Für mich (mit meiner Auswertung)"
+],
+"Для общего пользования": [
+"For everyone",
+"Umumiy foydalanish uchun",
+"Herkes için",
+"Für alle"
+],
+"Для общего пользования: ваш личный разбор в документ не попадёт.": [
+"For everyone: your personal review will not be included.",
+"Umumiy foydalanish uchun: shaxsiy tahlilingiz hujjatga kirmaydi.",
+"Herkes için: kişisel değerlendirmeniz belgeye girmez.",
+"Für alle: Ihre persönliche Auswertung wird nicht aufgenommen."
+],
+"для себя": [
+"for me",
+"o‘zim uchun",
+"kendim için",
+"für mich"
+],
+"Контакты участников": [
+"Participants' contacts",
+"Ishtirokchilar kontaktlari",
+"Katılımcıların iletişim bilgileri",
+"Kontakte der Teilnehmer"
+],
+"Темы встречи": [
+"Meeting topics",
+"Uchrashuv mavzulari",
+"Toplantı konuları",
+"Themen des Treffens"
+],
+"Итог": [
+"Result",
+"Natija",
+"Sonuç",
+"Ergebnis"
+],
+"Позиции участников": [
+"Participants' positions",
+"Ishtirokchilar pozitsiyalari",
+"Katılımcıların tutumları",
+"Positionen der Teilnehmer"
+],
+"Сильно": [
+"Strong",
+"Kuchli",
+"Güçlü",
+"Stark"
+],
+"Слабо": [
+"Weak",
+"Zaif",
+"Zayıf",
+"Schwach"
+],
+"Не в тему": [
+"Off topic",
+"Mavzudan tashqari",
+"Konu dışı",
+"Am Thema vorbei"
+],
+"Личный разбор — только для меня": [
+"Personal review — for me only",
+"Shaxsiy tahlil — faqat o‘zim uchun",
+"Kişisel değerlendirme — yalnızca benim için",
+"Persönliche Auswertung — nur für mich"
+],
+"Оценка": [
+"Score",
+"Baho",
+"Puan",
+"Bewertung"
+],
+"Уверенность": [
+"Confidence",
+"Ishonch",
+"Özgüven",
+"Sicherheit"
+],
+"Разбор моментов": [
+"Key moments",
+"Lahzalar tahlili",
+"Anların değerlendirmesi",
+"Schlüsselmomente"
+],
+"Лучше": [
+"Better",
+"Yaxshiroq",
+"Daha iyi",
+"Besser"
+],
+"Фото": [
+"Photos",
+"Suratlar",
+"Fotoğraflar",
+"Fotos"
+],
+"Файл скачается — вверху окна появится значок загрузки ⬇. Нажмите на него и перетащите файл мышкой прямо в чат Telegram или WhatsApp.": [
+"The file will download — a download icon ⬇ appears at the top of the window. Click it and drag the file with the mouse straight into a Telegram or WhatsApp chat.",
+"Fayl yuklab olinadi — oynaning yuqorisida ⬇ belgisi paydo bo‘ladi. Uni bosing va faylni sichqoncha bilan Telegram yoki WhatsApp chatiga sudrab olib boring.",
+"Dosya indirilir — pencerenin üstünde ⬇ indirme simgesi görünür. Ona tıklayın ve dosyayı fareyle doğrudan Telegram veya WhatsApp sohbetine sürükleyin.",
+"Die Datei wird heruntergeladen — oben im Fenster erscheint ⬇. Klicken Sie darauf und ziehen Sie die Datei direkt in den Telegram- oder WhatsApp-Chat."
+],
+"этот отрезок не удалось расшифровать": [
+"this part could not be transcribed",
+"bu qismni matnga o‘girib bo‘lmadi",
+"bu bölüm yazıya dökülemedi",
+"dieser Abschnitt konnte nicht transkribiert werden"
+],
+"Источники": [
+"Sources",
+"Manbalar",
+"Kaynaklar",
+"Quellen"
+],
+"В заметку": [
+"To a note",
+"Qaydga",
+"Nota olarak",
+"Als Notiz"
+],
+"Спросите что угодно — как в Gemini. Например:": [
+"Ask anything — like in Gemini. For example:",
+"Istalgan narsani so‘rang — Gemini’dagi kabi. Masalan:",
+"Her şeyi sorun — Gemini’deki gibi. Örneğin:",
+"Fragen Sie alles — wie in Gemini. Zum Beispiel:"
+],
+"Думаю…": [
+"Thinking…",
+"O‘ylayapman…",
+"Düşünüyorum…",
+"Denke nach…"
+],
+"Нужен ключ Gemini — Настройки → AI": [
+"A Gemini key is needed — Settings → AI",
+"Gemini kaliti kerak — Sozlamalar → AI",
+"Gemini anahtarı gerekli — Ayarlar → AI",
+"Ein Gemini-Schlüssel ist nötig — Einstellungen → AI"
+],
+"Учитывать мои дела": [
+"Use my plans",
+"Rejalarimni hisobga olish",
+"Planlarımı dikkate al",
+"Meine Termine berücksichtigen"
+],
+"Искать в интернете": [
+"Search the web",
+"Internetdan qidirish",
+"İnternette ara",
+"Im Internet suchen"
+],
+"Сообщение…": [
+"Message…",
+"Xabar…",
+"Mesaj…",
+"Nachricht…"
+],
+"Очистить": [
+"Clear",
+"Tozalash",
+"Temizle",
+"Leeren"
+],
+"Новый разговор": [
+"New conversation",
+"Yangi suhbat",
+"Yeni sohbet",
+"Neues Gespräch"
+],
+"Чат с AI": [
+"AI chat",
+"AI bilan suhbat",
+"AI sohbet",
+"KI-Chat"
+],
+"Начать новый разговор? Этот удалится.": [
+"Start a new conversation? This one will be deleted.",
+"Yangi suhbat boshlansinmi? Bu suhbat o‘chiriladi.",
+"Yeni sohbet başlatılsın mı? Bu silinecek.",
+"Neues Gespräch beginnen? Dieses wird gelöscht."
+],
+"Сохранено в Заметки ✓": [
+"Saved to Notes ✓",
+"Qaydlarga saqlandi ✓",
+"Notlara kaydedildi ✓",
+"In Notizen gespeichert ✓"
+],
+"Поиск в интернете сейчас недоступен — ответил без него": [
+"Web search is unavailable right now — answered without it",
+"Internet qidiruvi hozir mavjud emas — usiz javob berdim",
+"İnternet araması şu an kullanılamıyor — onsuz yanıtladım",
+"Websuche gerade nicht verfügbar — ohne sie geantwortet"
+],
+"не отправлено": [
+"not sent",
+"yuborilmadi",
+"gönderilmedi",
+"nicht gesendet"
+],
+"Команда": [
+"Command",
+"Buyruq",
+"Komut",
+"Befehl"
+],
+"Озвучить": [
+"Read aloud",
+"Ovoz chiqarib o‘qish",
+"Sesli oku",
+"Vorlesen"
+],
+"Телефона, Telegram и почты пока нет — нажмите «Изменить»": [
+"No phone, Telegram or e-mail yet — tap «Edit»",
+"Telefon, Telegram va pochta hali yo‘q — «O‘zgartirish»ni bosing",
+"Henüz telefon, Telegram veya e-posta yok — «Düzenle»ye dokunun",
+"Noch kein Telefon, Telegram oder E-Mail — «Bearbeiten» tippen"
+],
+"Откуда": [
+"Source",
+"Qayerdan",
+"Kaynak",
+"Herkunft"
+],
+"Откуда клиент / как познакомились": [
+"Where the client came from / how you met",
+"Mijoz qayerdan / qanday tanishgansiz",
+"Müşteri nereden geldi / nasıl tanıştınız",
+"Woher der Mandant kommt / wie Sie sich kennen"
+],
+"Например: по рекомендации Азиза; нашёл через Instagram": [
+"E.g.: recommended by Aziz; found via Instagram",
+"Masalan: Aziz tavsiyasi bilan; Instagram orqali topdim",
+"Örn.: Aziz’in tavsiyesiyle; Instagram üzerinden buldum",
+"Z. B.: Empfehlung von Aziz; über Instagram gefunden"
+],
+"Кратко о клиенте, заметки": [
+"About the client, notes",
+"Mijoz haqida qisqacha, qaydlar",
+"Müşteri hakkında kısaca, notlar",
+"Kurz zum Mandanten, Notizen"
+],
+"Это повторяющаяся задача": [
+"This is a repeating task",
+"Bu takrorlanadigan vazifa",
+"Bu tekrarlanan bir görev",
+"Das ist eine wiederkehrende Aufgabe"
+],
+"Повтор: {r}. Следующий раз — {d}.": [
+"Repeats: {r}. Next time — {d}.",
+"Takror: {r}. Keyingi safar — {d}.",
+"Tekrar: {r}. Sonraki — {d}.",
+"Wiederholung: {r}. Nächstes Mal — {d}."
+],
+"Напомнить снова {d}": [
+"Remind again {d}",
+"{d} yana eslatish",
+"{d} tekrar hatırlat",
+"Erneut erinnern {d}"
+],
+"Больше не повторять": [
+"Stop repeating",
+"Boshqa takrorlamaslik",
+"Artık tekrarlama",
+"Nicht mehr wiederholen"
+],
+"Выполнено — больше не повторять": [
+"Done — stop repeating",
+"Bajarildi — boshqa takrorlamaslik",
+"Tamamlandı — artık tekrarlama",
+"Erledigt — nicht mehr wiederholen"
+],
+"Выполнено — повторить {d}": [
+"Done — repeat {d}",
+"Bajarildi — {d} takrorlash",
+"Tamamlandı — {d} tekrarla",
+"Erledigt — wiederholen {d}"
+],
+"Следующее напоминание: {d}": [
+"Next reminder: {d}",
+"Keyingi eslatma: {d}",
+"Sonraki hatırlatma: {d}",
+"Nächste Erinnerung: {d}"
+],
+"Повторы остановлены — напоминаний по этой задаче больше не будет": [
+"Repeats stopped — no more reminders for this task",
+"Takrorlar to‘xtatildi — bu vazifa bo‘yicha eslatmalar bo‘lmaydi",
+"Tekrarlar durduruldu — bu görev için artık hatırlatma yok",
+"Wiederholungen gestoppt — keine Erinnerungen mehr zu dieser Aufgabe"
+],
+"Отложить…": [
+"Snooze…",
+"Keyinga qoldirish…",
+"Ertele…",
+"Später…"
+],
+"Сегодня вечером": [
+"This evening",
+"Bugun kechqurun",
+"Bu akşam",
+"Heute Abend"
+],
+"Завтра утром": [
+"Tomorrow morning",
+"Ertaga ertalab",
+"Yarın sabah",
+"Morgen früh"
+],
+"Когда напомнить снова?": [
+"When to remind again?",
+"Qachon yana eslatay?",
+"Ne zaman tekrar hatırlatayım?",
+"Wann erneut erinnern?"
+],
+"Или своё время": [
+"Or your own time",
+"Yoki o‘z vaqtingiz",
+"Veya kendi saatiniz",
+"Oder eigene Zeit"
+],
+"Напомнить в это время": [
+"Remind at this time",
+"Shu vaqtda eslatish",
+"Bu saatte hatırlat",
+"Zu dieser Zeit erinnern"
+],
+"Выберите время в будущем": [
+"Choose a time in the future",
+"Kelajakdagi vaqtni tanlang",
+"Gelecekte bir saat seçin",
+"Wählen Sie eine Zeit in der Zukunft"
+],
+"Напомню {d} в {t}": [
+"I'll remind you {d} at {t}",
+"{d} soat {t} da eslataman",
+"{d} {t} saatinde hatırlatacağım",
+"Ich erinnere Sie {d} um {t}"
+],
+"Это не картинка": [
+"This is not an image",
+"Bu rasm emas",
+"Bu bir resim değil",
+"Das ist kein Bild"
+],
+"Сменить фото": [
+"Change photo",
+"Suratni almashtirish",
+"Fotoğrafı değiştir",
+"Foto ändern"
+],
+"Убрать": [
+"Remove",
+"Olib tashlash",
+"Kaldır",
+"Entfernen"
+],
+"Координаты": [
+"Coordinates",
+"Koordinatalar",
+"Koordinatlar",
+"Koordinaten"
+],
+"Откуда клиент": [
+"Client source",
+"Mijoz qayerdan",
+"Müşteri kaynağı",
+"Herkunft des Mandanten"
+],
+"Фото, телефоны, Telegram, WhatsApp, почта, откуда клиент, заметки": [
+"Photo, phones, Telegram, WhatsApp, e-mail, source, notes",
+"Surat, telefonlar, Telegram, WhatsApp, pochta, mijoz qayerdan, qaydlar",
+"Fotoğraf, telefonlar, Telegram, WhatsApp, e-posta, kaynak, notlar",
+"Foto, Telefone, Telegram, WhatsApp, E-Mail, Herkunft, Notizen"
+],
+"Встречи с ним ({n}): даты, адреса, координаты, ссылки на карты": [
+"Meetings with them ({n}): dates, addresses, coordinates, map links",
+"U bilan uchrashuvlar ({n}): sanalar, manzillar, koordinatalar, xarita havolalari",
+"Onunla toplantılar ({n}): tarihler, adresler, koordinatlar, harita bağlantıları",
+"Treffen ({n}): Daten, Adressen, Koordinaten, Kartenlinks"
+],
+"Краткие итоги встреч": [
+"Short meeting summaries",
+"Uchrashuvlarning qisqa natijalari",
+"Toplantıların kısa özetleri",
+"Kurze Zusammenfassungen der Treffen"
+],
+"Документы (паспорт и др.) — картинки крупно": [
+"Documents (passport etc.) — images full size",
+"Hujjatlar (pasport va b.) — rasmlar katta",
+"Belgeler (pasaport vb.) — resimler büyük",
+"Dokumente (Pass usw.) — Bilder groß"
+],
+"Не включайте, если отдаёте PDF другим людям": [
+"Don't include if you give the PDF to other people",
+"PDF’ni boshqalarga bersangiz, qo‘shmang",
+"PDF’i başkalarına veriyorsanız eklemeyin",
+"Nicht aufnehmen, wenn Sie das PDF weitergeben"
+],
+"Последняя встреча": [
+"Last meeting",
+"Oxirgi uchrashuv",
+"Son toplantı",
+"Letztes Treffen"
+],
+"Что сделать?": [
+"What to do?",
+"Nima qilay?",
+"Ne yapayım?",
+"Was soll ich tun?"
+],
+"Скажите или напишите, например: «позвони», «напиши в Telegram, что встреча переносится на 15:00», «отправь в WhatsApp адрес офиса», «письмо: пришлите реквизиты».": [
+"Say or type, e.g.: «call», «write in Telegram that the meeting moves to 15:00», «send the office address on WhatsApp», «email: please send your bank details».",
+"Ayting yoki yozing, masalan: «qo‘ng‘iroq qil», «Telegramga uchrashuv 15:00 ga ko‘chganini yoz», «WhatsApp’da ofis manzilini yubor», «xat: rekvizitlarni yuboring».",
+"Söyleyin veya yazın, örn.: «ara», «Telegram’dan toplantının 15:00’e alındığını yaz», «WhatsApp’tan ofis adresini gönder», «e-posta: banka bilgilerinizi gönderin».",
+"Sagen oder tippen Sie, z. B.: «anrufen», «schreib per Telegram, dass das Treffen auf 15:00 verschoben ist», «schick per WhatsApp die Büroadresse», «E-Mail: bitte Bankdaten senden»."
+],
+"Выполнить": [
+"Do it",
+"Bajarish",
+"Yap",
+"Ausführen"
+],
+"Скажите или напишите команду": [
+"Say or type a command",
+"Buyruqni ayting yoki yozing",
+"Bir komut söyleyin veya yazın",
+"Befehl sagen oder tippen"
+],
+"У контакта нет телефона — добавьте его в карточке": [
+"The contact has no phone — add it on the card",
+"Kontaktda telefon yo‘q — kartaga qo‘shing",
+"Kişinin telefonu yok — kartına ekleyin",
+"Kein Telefon beim Kontakt — auf der Karte ergänzen"
+],
+"У контакта нет ни Telegram, ни телефона, ни почты": [
+"The contact has no Telegram, phone or e-mail",
+"Kontaktda Telegram ham, telefon ham, pochta ham yo‘q",
+"Kişinin Telegram’ı, telefonu veya e-postası yok",
+"Kontakt hat weder Telegram noch Telefon noch E-Mail"
+],
+"AI составляет сообщение…": [
+"AI is drafting the message…",
+"AI xabar tuzmoqda…",
+"AI mesajı hazırlıyor…",
+"KI formuliert die Nachricht…"
+],
+"Проверьте текст. Откроется чат — нажмите «Отправить» сами: так ни одно сообщение не уйдёт без вашего взгляда.": [
+"Check the text. The chat will open — press «Send» yourself: no message goes out without your look.",
+"Matnni tekshiring. Chat ochiladi — «Yuborish»ni o‘zingiz bosing: hech bir xabar sizning nazaringizsiz ketmaydi.",
+"Metni kontrol edin. Sohbet açılacak — «Gönder»e kendiniz basın: hiçbir mesaj sizin görmeden gitmez.",
+"Prüfen Sie den Text. Der Chat öffnet sich — tippen Sie selbst auf «Senden»: nichts geht ungesehen raus."
+],
+"Открыть и вставить": [
+"Open and paste",
+"Ochish va qo‘yish",
+"Aç ve yapıştır",
+"Öffnen und einfügen"
+],
+"Текст скопирован. Если он не вставился сам — нажмите в поле сообщения → «Вставить».": [
+"Text copied. If it wasn't pasted automatically — tap the message field → «Paste».",
+"Matn nusxalandi. Agar o‘zi qo‘yilmasa — xabar maydonini bosing → «Qo‘yish».",
+"Metin kopyalandı. Kendiliğinden yapışmadıysa — mesaj alanına dokunun → «Yapıştır».",
+"Text kopiert. Falls nicht eingefügt — ins Nachrichtenfeld tippen → «Einfügen»."
+],
+"Офлайн-карта": [
+"Offline map",
+"Oflayn xarita",
+"Çevrimdışı harita",
+"Offline-Karte"
+],
+"Вы не вошли в аккаунт — задачи есть только на этом устройстве. Войти →": [
+"You are not signed in — tasks are only on this device. Sign in →",
+"Akkauntga kirmagansiz — vazifalar faqat shu qurilmada. Kirish →",
+"Hesaba giriş yapmadınız — görevler yalnızca bu cihazda. Giriş →",
+"Nicht angemeldet — Aufgaben nur auf diesem Gerät. Anmelden →"
+],
+"не синхронизировано": [
+"not synced",
+"sinxronlanmagan",
+"eşitlenmedi",
+"nicht synchronisiert"
+],
+"повторить": [
+"retry",
+"qayta urinish",
+"tekrar dene",
+"erneut versuchen"
+],
+"отправляю {n}…": [
+"sending {n}…",
+"{n} ta yuborilmoqda…",
+"{n} gönderiliyor…",
+"sende {n}…"
+],
+"«+ Добавить» → «Новый контакт»: ФИО, телефон, Telegram, WhatsApp, почта, фото, откуда клиент. Всё сохранится и в «Контактах».": [
+"«+ Add» → «New contact»: full name, phone, Telegram, WhatsApp, e-mail, photo, source. It is also saved in «Contacts».",
+"«+ Qo‘shish» → «Yangi kontakt»: F.I.Sh., telefon, Telegram, WhatsApp, pochta, surat, mijoz qayerdan. Hammasi «Kontaktlar»ga ham saqlanadi.",
+"«+ Ekle» → «Yeni kişi»: ad soyad, telefon, Telegram, WhatsApp, e-posta, fotoğraf, kaynak. «Kişiler»e de kaydedilir.",
+"«+ Hinzufügen» → «Neuer Kontakt»: Name, Telefon, Telegram, WhatsApp, E-Mail, Foto, Herkunft. Wird auch in «Kontakte» gespeichert."
+],
+"Только для вас. Не попадает в ссылки, в PDF «для всех» и в итоги для пересылки.": [
+"Only for you. Not included in links, «for everyone» PDFs or summaries for forwarding.",
+"Faqat siz uchun. Havolalarga, «hamma uchun» PDF’ga va yuboriladigan natijalarga kirmaydi.",
+"Yalnızca sizin için. Bağlantılara, «herkes için» PDF’lere ve iletilecek özetlere girmez.",
+"Nur für Sie. Nicht in Links, «für alle»-PDFs oder weitergeleiteten Zusammenfassungen."
+],
+"Сильные стороны": [
+"Strengths",
+"Kuchli tomonlar",
+"Güçlü yönler",
+"Stärken"
+],
+"Слабые стороны": [
+"Weaknesses",
+"Zaif tomonlar",
+"Zayıf yönler",
+"Schwächen"
+],
+"Что сделать сейчас, чтобы исправить": [
+"What to do now to fix it",
+"Tuzatish uchun hozir nima qilish kerak",
+"Düzeltmek için şimdi ne yapmalı",
+"Was jetzt zu tun ist, um es zu korrigieren"
+],
+"На следующие встречи": [
+"For the next meetings",
+"Keyingi uchrashuvlar uchun",
+"Sonraki toplantılar için",
+"Für die nächsten Treffen"
+],
+"Разбора по темам нет — нажмите «Обработать заново» → «Только переделать итоги и разбор».": [
+"No breakdown by topic — tap «Process again» → «Only redo summary and review».",
+"Mavzular bo‘yicha tahlil yo‘q — «Qayta ishlash» → «Faqat natijalar va tahlilni qayta qilish»ni bosing.",
+"Konu bazlı döküm yok — «Yeniden işle» → «Yalnızca özeti ve değerlendirmeyi yenile»ye dokunun.",
+"Keine Aufteilung nach Themen — «Erneut verarbeiten» → «Nur Zusammenfassung und Auswertung neu»."
+],
+"Темы": [
+"Topics",
+"Mavzular",
+"Konular",
+"Themen"
+],
+"Планы и этапы": [
+"Plans and stages",
+"Rejalar va bosqichlar",
+"Planlar ve aşamalar",
+"Pläne und Etappen"
+],
+"Цифры и суммы": [
+"Figures and amounts",
+"Raqamlar va summalar",
+"Rakamlar ve tutarlar",
+"Zahlen und Beträge"
+],
+"Открытые вопросы": [
+"Open questions",
+"Ochiq savollar",
+"Açık sorular",
+"Offene Fragen"
+],
+"Мой разбор — только для вас, не пересылайте": [
+"My review — for you only, don't forward",
+"Mening tahlilim — faqat siz uchun, boshqalarga yubormang",
+"Değerlendirmem — yalnızca sizin için, iletmeyin",
+"Meine Auswertung — nur für Sie, nicht weiterleiten"
+],
+"Например: Алишер": [
+"E.g.: Alisher",
+"Masalan: Alisher",
+"Örn.: Alisher",
+"Z. B.: Alisher"
+],
+"Как ещё вас называют на встречах": [
+"Other names people call you in meetings",
+"Uchrashuvlarda sizni yana qanday chaqirishadi",
+"Toplantılarda size başka nasıl hitap ediliyor",
+"Wie man Sie in Treffen sonst noch nennt"
+],
+"Через запятую: Алишерходжа, Алишер-ака": [
+"Comma-separated: Alisherkhoja, Alisher-aka",
+"Vergul bilan: Alisherxo‘ja, Alisher aka",
+"Virgülle: Alisherhoca, Alisher-aka",
+"Durch Komma getrennt: Alisherchodscha, Alisher-aka"
+],
+"По имени AI узнаёт вас в записи встречи и делает для вас отдельный разбор. Имя одинаково на телефоне и компьютере.": [
+"By your name AI recognises you in the meeting recording and prepares a separate review for you. The name is the same on the phone and the computer.",
+"AI ismingiz orqali sizni uchrashuv yozuvida taniydi va siz uchun alohida tahlil tayyorlaydi. Ism telefon va kompyuterda bir xil.",
+"AI adınızdan sizi toplantı kaydında tanır ve size ayrı bir değerlendirme hazırlar. Ad telefonda ve bilgisayarda aynıdır.",
+"An Ihrem Namen erkennt die KI Sie in der Aufnahme und erstellt eine eigene Auswertung. Der Name ist auf Handy und Computer gleich."
+],
+"Мой разбор после каждой встречи": [
+"My review after every meeting",
+"Har uchrashuvdan keyin mening tahlilim",
+"Her toplantıdan sonra değerlendirmem",
+"Meine Auswertung nach jedem Treffen"
+],
+"AI оценит, как вы вели разговор: сильные и слабые стороны, ошибки и как было лучше ответить. Видите только вы. Нужно ваше имя (раздел выше).": [
+"AI assesses how you led the conversation: strengths and weaknesses, mistakes and better answers. Only you see it. Your name is needed (section above).",
+"AI suhbatni qanday olib borganingizni baholaydi: kuchli va zaif tomonlar, xatolar va qanday javob bergan yaxshiroq edi. Faqat siz ko‘rasiz. Ismingiz kerak (yuqoridagi bo‘lim).",
+"AI konuşmayı nasıl yönettiğinizi değerlendirir: güçlü ve zayıf yönler, hatalar ve daha iyi cevaplar. Yalnızca siz görürsünüz. Adınız gerekli (yukarıdaki bölüm).",
+"Die KI bewertet Ihre Gesprächsführung: Stärken, Schwächen, Fehler und bessere Antworten. Nur Sie sehen es. Ihr Name wird benötigt (Abschnitt oben)."
+],
+"Напоминание": [
+"Reminder",
+"Eslatma",
+"Hatırlatma",
+"Erinnerung"
+],
+"Участники и клиент": [
+"Participants and client",
+"Ishtirokchilar va mijoz",
+"Katılımcılar ve müşteri",
+"Teilnehmer und Mandant"
+],
+"ФИО, телефон, Telegram, WhatsApp, почта, фото, откуда клиент — сохранятся в «Контактах».": [
+"Full name, phone, Telegram, WhatsApp, e-mail, photo, source — saved in «Contacts».",
+"F.I.Sh., telefon, Telegram, WhatsApp, pochta, surat, mijoz qayerdan — «Kontaktlar»ga saqlanadi.",
+"Ad soyad, telefon, Telegram, WhatsApp, e-posta, fotoğraf, kaynak — «Kişiler»e kaydedilir.",
+"Name, Telefon, Telegram, WhatsApp, E-Mail, Foto, Herkunft — werden in «Kontakte» gespeichert."
+],
+"Напоминать каждый год?": [
+"Remind every year?",
+"Har yili eslatilsinmi?",
+"Her yıl hatırlatılsın mı?",
+"Jedes Jahr erinnern?"
+],
+"Да, каждый год": [
+"Yes, every year",
+"Ha, har yili",
+"Evet, her yıl",
+"Ja, jedes Jahr"
+],
+"Только один раз": [
+"Only once",
+"Faqat bir marta",
+"Yalnızca bir kez",
+"Nur einmal"
+],
+"Выбрать из контактов": [
+"Choose from contacts",
+"Kontaktlardan tanlash",
+"Kişilerden seç",
+"Aus Kontakten wählen"
+],
+"Новый клиент": [
+"New client",
+"Yangi mijoz",
+"Yeni müşteri",
+"Neuer Mandant"
+],
+"«30 сентября в 21:00 напомни, что 1 октября день рождения у Жужика»": [
+"«On 30 September at 21:00 remind me that 1 October is Zhuzhik's birthday»",
+"«30-sentabr soat 21:00 da eslat: 1-oktabr Jujikning tug‘ilgan kuni»",
+"«30 Eylül 21:00’de hatırlat: 1 Ekim Juzhik’in doğum günü»",
+"«Am 30. September um 21:00 erinnere mich: am 1. Oktober hat Schuschik Geburtstag»"
+],
+"В тот день в {t}": [
+"On the day at {t}",
+"O‘sha kuni soat {t} da",
+"O gün {t}’de",
+"Am Tag um {t}"
+],
+"Накануне в {t}": [
+"The day before at {t}",
+"Bir kun oldin soat {t} da",
+"Bir gün önce {t}’de",
+"Am Vortag um {t}"
+],
+"Через час": [
+"In an hour",
+"Bir soatdan keyin",
+"Bir saat sonra",
+"In einer Stunde"
+],
+"Когда напомнить?": [
+"When to remind?",
+"Qachon eslatay?",
+"Ne zaman hatırlatayım?",
+"Wann erinnern?"
+],
+"Выбрать дату и время": [
+"Choose date and time",
+"Sana va vaqtni tanlash",
+"Tarih ve saat seç",
+"Datum und Uhrzeit wählen"
+],
+"Напомню": [
+"I'll remind you",
+"Eslataman",
+"Hatırlatacağım",
+"Ich erinnere"
+],
+"Событие": [
+"Event",
+"Voqea",
+"Etkinlik",
+"Ereignis"
+],
+"Придёт уведомление на телефон": [
+"You'll get a notification on the phone",
+"Telefonga bildirishnoma keladi",
+"Telefona bildirim gelecek",
+"Sie erhalten eine Benachrichtigung auf dem Handy"
+],
+"Придёт уведомление на это устройство": [
+"You'll get a notification on this device",
+"Shu qurilmaga bildirishnoma keladi",
+"Bu cihaza bildirim gelecek",
+"Sie erhalten eine Benachrichtigung auf diesem Gerät"
+],
+"и сообщение в Telegram": [
+"and a Telegram message",
+"va Telegramga xabar",
+"ve bir Telegram mesajı",
+"und eine Telegram-Nachricht"
+],
+"Сохранить напоминание?": [
+"Save the reminder?",
+"Eslatma saqlansinmi?",
+"Hatırlatma kaydedilsin mi?",
+"Erinnerung speichern?"
+],
+"Повторять каждый год": [
+"Repeat every year",
+"Har yili takrorlash",
+"Her yıl tekrarla",
+"Jedes Jahr wiederholen"
+],
+"Дни рождения, годовщины, праздники": [
+"Birthdays, anniversaries, holidays",
+"Tug‘ilgan kunlar, yubileylar, bayramlar",
+"Doğum günleri, yıldönümleri, bayramlar",
+"Geburtstage, Jahrestage, Feiertage"
+],
+"Напоминание сохранено ✓": [
+"Reminder saved ✓",
+"Eslatma saqlandi ✓",
+"Hatırlatma kaydedildi ✓",
+"Erinnerung gespeichert ✓"
+],
+"Стенограмма: {w} слов на {d} записи.": [
+"Transcript: {w} words for {d} of recording.",
+"Stenogramma: {d} yozuvga {w} so‘z.",
+"Döküm: {d} kayıt için {w} kelime.",
+"Transkript: {w} Wörter für {d} Aufnahme."
+],
+"Похоже, стенограмма неполная — лучше расшифровать заново.": [
+"The transcript looks incomplete — better transcribe it again.",
+"Stenogramma to‘liq emasga o‘xshaydi — qayta matnga o‘girgan ma’qul.",
+"Döküm eksik görünüyor — yeniden yazıya dökmek daha iyi.",
+"Das Transkript scheint unvollständig — besser neu transkribieren."
+],
+"Расшифровать заново и сделать итоги": [
+"Transcribe again and summarise",
+"Qayta matnga o‘girish va natija chiqarish",
+"Yeniden yazıya dök ve özetle",
+"Neu transkribieren und zusammenfassen"
+],
+"Только переделать итоги и разбор": [
+"Only redo summary and review",
+"Faqat natijalar va tahlilni qayta qilish",
+"Yalnızca özeti ve değerlendirmeyi yenile",
+"Nur Zusammenfassung und Auswertung neu"
+],
+"Расшифровываю запись: часть {k} из {n} (по 10 минут)…": [
+"Transcribing: part {k} of {n} (10 minutes each)…",
+"Yozuv matnga o‘girilmoqda: {n} dan {k}-qism (har biri 10 daqiqa)…",
+"Kayıt yazıya dökülüyor: {n} parçadan {k}. (her biri 10 dakika)…",
+"Transkribiere: Teil {k} von {n} (je 10 Minuten)…"
+],
+"Анализирую: темы, планы, цифры, решения, задачи…": [
+"Analysing: topics, plans, figures, decisions, tasks…",
+"Tahlil qilinmoqda: mavzular, rejalar, raqamlar, qarorlar, vazifalar…",
+"Analiz ediliyor: konular, planlar, rakamlar, kararlar, görevler…",
+"Analysiere: Themen, Pläne, Zahlen, Beschlüsse, Aufgaben…"
+],
+"Готовлю разбор: как вы провели встречу…": [
+"Preparing your review: how you did in the meeting…",
+"Tahlil tayyorlanmoqda: uchrashuvni qanday o‘tkazdingiz…",
+"Değerlendirme hazırlanıyor: toplantıyı nasıl yönettiniz…",
+"Bereite Ihre Auswertung vor: wie Sie das Treffen geführt haben…"
+],
+"Участники и места (адрес, координаты, ссылки на карты)": [
+"Participants and places (address, coordinates, map links)",
+"Ishtirokchilar va joylar (manzil, koordinatalar, xarita havolalari)",
+"Katılımcılar ve yerler (adres, koordinatlar, harita bağlantıları)",
+"Teilnehmer und Orte (Adresse, Koordinaten, Kartenlinks)"
+],
+"Контакты участников: телефон, Telegram, WhatsApp, почта": [
+"Participants' contacts: phone, Telegram, WhatsApp, e-mail",
+"Ishtirokchilar kontaktlari: telefon, Telegram, WhatsApp, pochta",
+"Katılımcı iletişim bilgileri: telefon, Telegram, WhatsApp, e-posta",
+"Kontakte der Teilnehmer: Telefon, Telegram, WhatsApp, E-Mail"
+],
+"Фото крупно: места, клиенты, изображения из материалов ({n})": [
+"Photos full size: places, clients, images from materials ({n})",
+"Suratlar katta: joylar, mijozlar, materiallardagi rasmlar ({n})",
+"Büyük fotoğraflar: yerler, müşteriler, materyallerdeki resimler ({n})",
+"Fotos groß: Orte, Mandanten, Bilder aus Materialien ({n})"
+],
+"🔒 Мой разбор (только для меня)": [
+"🔒 My review (for me only)",
+"🔒 Mening tahlilim (faqat o‘zim uchun)",
+"🔒 Değerlendirmem (yalnızca benim için)",
+"🔒 Meine Auswertung (nur für mich)"
+],
+"🔒 Мой разбор": [
+"🔒 My review",
+"🔒 Mening tahlilim",
+"🔒 Değerlendirmem",
+"🔒 Meine Auswertung"
+],
+"10 мин": [
+"10 min",
+"10 daq",
+"10 dk",
+"10 Min"
+],
+"30 мин": [
+"30 min",
+"30 daq",
+"30 dk",
+"30 Min"
+],
+"1 час": [
+"1 hour",
+"1 soat",
+"1 saat",
+"1 Stunde"
+],
+"3 часа": [
+"3 hours",
+"3 soat",
+"3 saat",
+"3 Stunden"
+],
+"Составь план подготовки к переговорам об инвестициях": [
+"Make a plan to prepare for investment negotiations",
+"Investitsiya bo‘yicha muzokaralarga tayyorgarlik rejasini tuz",
+"Yatırım müzakerelerine hazırlık planı yap",
+"Erstelle einen Plan zur Vorbereitung auf Investitionsverhandlungen"
+],
+"Как вежливо напомнить клиенту об оплате?": [
+"How to politely remind a client about payment?",
+"Mijozga to‘lov haqida qanday xushmuomalalik bilan eslatish mumkin?",
+"Müşteriye ödemeyi kibarca nasıl hatırlatırım?",
+"Wie erinnere ich einen Mandanten höflich an die Zahlung?"
+],
+"Что у меня важного на этой неделе и что подготовить?": [
+"What's important for me this week and what should I prepare?",
+"Bu hafta nimalar muhim va nimani tayyorlashim kerak?",
+"Bu hafta benim için önemli olan ne ve neyi hazırlamalıyım?",
+"Was ist diese Woche wichtig und was muss ich vorbereiten?"
+],
+"Какие документы нужны для открытия ООО в Узбекистане?": [
+"What documents are needed to open an LLC in Uzbekistan?",
+"O‘zbekistonda MChJ ochish uchun qanday hujjatlar kerak?",
+"Özbekistan’da limited şirket açmak için hangi belgeler gerekir?",
+"Welche Dokumente braucht man für eine GmbH in Usbekistan?"
+]
+};
+  const L = ['en', 'uz', 'tr', 'de'];
+  for (const k in T) L.forEach((l, i) => { window.I18N_DICT[l] = window.I18N_DICT[l] || {}; window.I18N_DICT[l][k] = T[k][i]; });
+})();
