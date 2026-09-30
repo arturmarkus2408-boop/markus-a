@@ -170,7 +170,9 @@ function openPlaceEditor(place, title) {
       { cls: 'tall', onClose: () => { if (!saved) res(null); } });
     plRenderPhotos(); plGeoHint();
     $('#pl_save', sh).onclick = () => {
-      PE.name = $('#pl_name', sh).value.trim(); PE.url = $('#pl_url', sh).value.trim();
+      const newUrl = $('#pl_url', sh).value.trim();
+      if (newUrl !== (PE.url || '')) { const g2 = parseGeo(newUrl); if (g2) { PE.lat = g2.lat; PE.lng = g2.lng; } }   // a new link → its own point
+      PE.name = $('#pl_name', sh).value.trim(); PE.url = newUrl;
       PE.address = $('#pl_addr', sh).value.trim(); PE.note = $('#pl_note', sh).value.trim();
       if (PE.lat == null) { const g = parseGeo(PE.url) || parseGeo(PE.address); if (g) { PE.lat = g.lat; PE.lng = g.lng; } }
       if (!PE.name && !PE.url && !PE.address && PE.lat == null && !PE.photos.length) { toast(t('Укажите место: ссылку, адрес или точку на карте'), 3500); return; }

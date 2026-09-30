@@ -93,7 +93,8 @@ function closeAllSheets() { while (Sheets.length) closeSheet(); }
 function topSheet() { return Sheets[Sheets.length - 1]; }
 function dialog({ title, text = '', html = '', buttons = [{ l: 'OK', v: true, p: 1 }], onMount }) {
   return new Promise(res => {
-    const sh = openSheet(`<div class="dlg-t">${esc(title)}</div>${text ? `<div class="dlg-x">${text}</div>` : ''}${html}<div class="dlg-b">${buttons.map((b, i) => `<button class="btn ${b.p ? 'pri' : b.d ? 'danger' : 'ghost'}" data-i="${i}">${esc(b.l)}</button>`).join('')}</div>`, { cls: 'center', onClose: () => res(undefined) });
+    // v4.0: every question has a ✕ and never grows taller than the screen
+    const sh = openSheet(`<button class="xbtn dlg-close" onclick="closeSheet()" aria-label="${esc(t('Закрыть'))}">${ic('x', 18)}</button><div class="dlg-t">${esc(title)}</div>${text ? `<div class="dlg-x">${text}</div>` : ''}${html}<div class="dlg-b">${buttons.map((b, i) => `<button class="btn ${b.p ? 'pri' : b.d ? 'danger' : 'ghost'}" data-i="${i}">${esc(b.l)}</button>`).join('')}</div>`, { cls: 'center', onClose: () => res(undefined) });
     const entry = topSheet();
     $$('.dlg-b button', sh).forEach(b => b.onclick = () => {
       let v = buttons[+b.dataset.i].v;
@@ -229,7 +230,7 @@ document.addEventListener('click', e => {
 });
 function openItem(id) {
   const it = getItem(id); if (!it) return;
-  if (it.kind === 'meeting') go('meeting', id);
+  if (it.kind === 'meeting') { if (typeof closeAllSheets === 'function') closeAllSheets(); go('meeting', id); }
   else if (it.kind === 'note') openNoteEditor(it);
   else if (it.kind === 'contact') openContact(id);
   else openTaskDetail(it);
@@ -374,7 +375,9 @@ async function edEditSub(id) { E.date = $('#e_date').value || E.date; const ok =
 /* edit one subtask: text, deadline, "do after …" dependency */
 function openSubEditor(it, subId) {
   const isNew = !subId;
-  const s = isNew ? { id: uid(), text: '', done: false, due: null, time: null, after: null, afterDays: null } : clone(subById(it, subId));
+  const s0 = isNew ? null : subById(it, subId);
+  if (!isNew && !s0) { toast(t('Подзадача уже удалена')); return Promise.resolve(false); }
+  const s = isNew ? { id: uid(), text: '', done: false, due: null, time: null, after: null, afterDays: null } : clone(s0);
   const others = (it.subtasks || []).filter(x => x.id !== s.id);
   return new Promise(res => {
     let done = false;
@@ -403,7 +406,7 @@ function openSubEditor(it, subId) {
     if (isNew) setTimeout(() => $('#s_text', sh).focus(), 250);
   });
 }
-function edRenderFiles() { $('#e_files').innerHTML = (E.files || []).length ? attList(E.files, E.id, true) : ''; }
+function edRenderFiles() { const box = $$('#e_files').pop(); if (!box) return; box.innerHTML = (E.files || []).length ? attList(E.files, E.id, true) : ''; }
 async function edAddFiles(inp) {
   for (const f of inp.files) {
     if (f.size > 45 * 1048576) toast(t('«{x}» больше 45 МБ — в облако бесплатно не поместится, останется только на этом телефоне. Для больших видео лучше добавить ссылку.', { x: f.name }), 6000);
@@ -416,11 +419,12 @@ function edRenderPeople() {
   const box = $('#e_people'); if (!box) return;
   const cs = (E.contactIds || []).map(getItem).filter(c => c && !c.deleted);
   const names = (E.participants || []).filter(n => !cs.some(c => c.title === n));
-  box.innerHTML = `<div class="chips wrapchips">${cs.map(c => `<span class="chip on" onclick="edRemovePerson('${c.id}')">${ic('user', 13)} ${esc(c.title)} ✕</span>`).join('')}${names.map(n => `<span class="chip" onclick="edRemoveName('${esc(n).replace(/'/g, '&#39;')}')">${esc(n)} ✕</span>`).join('')}<button class="chip" onclick="edAddPerson()">${ic('plus', 13)} ${t('Выбрать из контактов')}</button><button class="chip" onclick="edNewClient()">${ic('plus', 13)} ${t('Новый контакт')}</button></div>`;
+  box.innerHTML = `<div class="chips wrapchips">${cs.map(c => `<span class="chip on" onclick="edRemovePerson('${c.id}')">${ic('user', 13)} ${esc(c.title)} ✕</span>`).join('')}${names.map((n, k) => `<span class="chip" onclick="edRemoveNameAt(${k})">${esc(n)} ✕</span>`).join('')}<button class="chip" onclick="edAddPerson()">${ic('plus', 13)} ${t('Выбрать из контактов')}</button><button class="chip" onclick="edNewClient()">${ic('plus', 13)} ${t('Новый контакт')}</button></div>`;
 }
 async function edAddPerson() { const id = await pickContact(E.contactIds || []); if (!id) return; E.contactIds = Array.from(new Set((E.contactIds || []).concat(id))); edRenderPeople(); }
 function edRemovePerson(id) { E.contactIds = (E.contactIds || []).filter(x => x !== id); edRenderPeople(); }
 function edRemoveName(n) { E.participants = (E.participants || []).filter(x => x !== n); edRenderPeople(); }
+function edRemoveNameAt(k) { const cs = (E.contactIds || []).map(getItem).filter(c => c && !c.deleted); const names = (E.participants || []).filter(n => !cs.some(c => c.title === n)); if (names[k] != null) edRemoveName(names[k]); }
 async function edPasteLoc() { try { const x = await navigator.clipboard.readText(); if (x) $('#e_loc').value = x.trim(); else toast(t('Буфер обмена пуст')); } catch (e) { toast(t('Вставьте ссылку вручную (долгое нажатие → Вставить)')); } }
 function edMyLoc() {
   if (!navigator.geolocation) return toast(t('Геопозиция недоступна'));
@@ -428,8 +432,14 @@ function edMyLoc() {
   navigator.geolocation.getCurrentPosition(p => { $('#e_loc').value = `https://maps.google.com/?q=${p.coords.latitude.toFixed(6)},${p.coords.longitude.toFixed(6)}`; toast(t('Локация добавлена ✓')); }, () => toast(t('Нет доступа к геопозиции')), { enableHighAccuracy: true, timeout: 15000 });
 }
 async function edCollect() {
-  const title = $('#e_title').value.trim();
+  let title = $('#e_title').value.trim();
   if (!title) { toast(t('Введите название')); $('#e_title').focus(); return false; }
+  const st = splitTitle(title, 150);
+  if (st.rest) {   // a very long title → short title, the full text goes to the description
+    title = st.title;
+    const d = $('#e_desc'); if (d && !d.value.includes(st.rest)) d.value = st.rest + (d.value.trim() ? '\n\n' + d.value : '');
+    toast(t('Название слишком длинное — полный текст перенесён в описание'), 4000);
+  }
   E.title = title;
   E.date = $('#e_date').value || null;
   E.start = $('#e_start').value || null;
@@ -475,7 +485,7 @@ function renderTaskDetail(id, sh) {
       <button class="xbtn" style="color:var(--red)" onclick="tdDelete('${id}')" aria-label="${esc(t('Удалить'))}">${ic('trash', 18)}</button>
       <button class="xbtn" onclick="favToggle('${id}')">${ic(it.fav ? 'starf' : 'star', 18)}</button>
       <button class="xbtn" onclick="closeSheet()" aria-label="${esc(t('Закрыть'))}">${ic('x', 18)}</button></div>
-    <div style="font-size:21px;font-weight:800;line-height:1.25;margin-bottom:8px">${esc(it.title)}</div>
+    <div class="td-title" style="font-size:21px;font-weight:800;line-height:1.25;margin-bottom:8px" onclick="this.classList.toggle('open')">${esc(it.title)}</div>
     <div class="pills">
       <span class="pill">${ic('calendar', 14)}${esc(whenLabel(it))}${se && se !== it.date ? ' → ' + esc(D.short(se)) : ''}</span>
       ${it.priority !== 'normal' ? `<span class="pill" style="color:${PRIO[it.priority].c}">${ic('flag', 14)}${t(PRIO[it.priority].l)}</span>` : ''}
@@ -564,12 +574,12 @@ function openNoteEditor(note, preset) {
     try { toast(t('AI улучшает текст…'), 8000); ta.value = await AI.improveText(ta.value); toast(t('Готово ✓')); } catch (e) { toast(e.message, 4000); }
   };
   $('#n_task', sh).onclick = async () => {
-    const x = ($('#n_title', sh).value + '. ' + $('#n_text', sh).value).trim();
+    const x = [$('#n_title', sh).value.trim(), $('#n_text', sh).value.trim()].filter(Boolean).join('. ');
     if (x.length < 3) return toast(t('Заметка пустая'));
-    closeSheet();
+    closeSheet(); toast(t('Распознаю…'), 6000);
     await handleCommand(x, { forceCreate: true });
   };
-  if ($('#n_del', sh)) $('#n_del', sh).onclick = async () => { if (!(await confirmDel(t('Удалить заметку?')))) return; removed = true; const it = getItem(N.id); if (it) await deleteItem(it); closeSheet(); toast(t('Удалено')); };
+  if ($('#n_del', sh)) $('#n_del', sh).onclick = async () => { if (!(await confirmDel(t('Удалить заметку?')))) return; removed = true; const it = getItem(N.id); if (it) { const fm = itemFileMetas(it); await deleteItem(it); purgeFiles(fm); } closeSheet(); toast(t('Удалено')); };
   if (isNew && !N.desc) setTimeout(() => $('#n_text', sh) && $('#n_text', sh).focus(), 250);
 }
 

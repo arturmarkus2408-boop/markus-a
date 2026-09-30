@@ -123,7 +123,11 @@ const Cloud = {
   },
   async uploadFile(f) {
     if (f.cloud) return;
-    const blob = await DB.get('files', f.id); if (!blob) return;
+    const blob = await DB.get('files', f.id);
+    if (!blob) {   // not on this phone: maybe it is already in the cloud and only the mark is old («only in the cloud» mode)
+      try { const { data } = await Cloud.sb.storage.from('files').list(Cloud.user.id, { search: f.id, limit: 40 }); const hit = (data || []).filter(o => o.name === f.id || o.name.startsWith(f.id + '.part')); if (hit.length) { f.cloud = true; if (hit.length > 1) f.parts = hit.length; delete f.cloudErr; } } catch (e) { }
+      return;
+    }
     const type = f.type || blob.type || 'application/octet-stream';
     let error = null;
     if (blob.size > Cloud.PART) {
@@ -193,6 +197,7 @@ const Cloud = {
           const loc = getItem(r.id);
           const newer = !loc || (inc.updated || '') > (loc.updated || '');
           if (newer) {
+            try { normalizeItem(inc); } catch (e) { }
             computeReminders(inc);
             await DB.put('items', inc);
             const i = S.items.findIndex(x => x.id === inc.id); if (i >= 0) S.items[i] = inc; else S.items.push(inc);

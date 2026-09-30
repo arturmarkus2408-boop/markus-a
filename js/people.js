@@ -162,11 +162,11 @@ function contactSpeech(c) {
   }
   return L.join(' ');
 }
-function speakContact(id) { const c = getItem(id); if (c) Speech.say(contactSpeech(c)); }
+function speakContact(id) { const c = getItem(id); if (c) TTS.say(contactSpeech(c)); }
 function speakItem(id) {
   const m = getItem(id); if (!m) return;
-  if (m.kind === 'meeting' && m.summary) return Speech.say(meetingSpeech(m));
-  Speech.say([m.title + '.', m.date ? D.human(m.date) + (m.start ? ' ' + t('в {t}', { t: m.start }) : '') + '.' : '', m.place ? t('Место') + ': ' + m.place + '.' : '', (m.participants || []).length ? t('Участники') + ': ' + m.participants.join(', ') + '.' : '', m.goals || '', m.desc || ''].filter(Boolean).join(' '));
+  if (m.kind === 'meeting' && m.summary) return TTS.say(meetingSpeech(m));
+  TTS.say([m.title + '.', m.date ? D.human(m.date) + (m.start ? ' ' + t('в {t}', { t: m.start }) : '') + '.' : '', m.place ? t('Место') + ': ' + m.place + '.' : '', (m.participants || []).length ? t('Участники') + ': ' + m.participants.join(', ') + '.' : '', m.goals || '', m.desc || ''].filter(Boolean).join(' '));
 }
 
 /* ---------- 🎙 «позвони ему», «напиши в Telegram, что…» ---------- */

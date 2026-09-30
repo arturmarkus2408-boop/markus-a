@@ -515,7 +515,6 @@ i.bspin{width:15px;height:15px;border:2px solid currentColor;border-top-color:tr
 .c-addr + .c-addr{border-top:1px solid var(--brd)}
 /* the header of every sheet stays on top while you scroll — the ✕ is always at hand */
 .sheet > .sh-h:first-child{position:sticky;top:-16px;z-index:6;background:var(--card);margin:-16px -16px 12px;padding:14px 16px 10px;border-radius:22px 22px 0 0;box-shadow:0 1px 0 var(--brd)}
-.sheet.center > .dlg-t:first-child{position:sticky;top:-16px;z-index:6;background:var(--card);margin:-16px -16px 8px;padding:16px 16px 8px}
 .sheet.center .dlg-b{position:sticky;bottom:calc(-18px - var(--sab));background:var(--card);padding:8px 0 calc(4px + var(--sab));z-index:5}
 .mic-btn.on,.chat-in .mic-btn.on{background:var(--red);color:#fff;border-color:var(--red);animation:pulse 1.2s infinite}
 /* documents: choose several */
@@ -525,3 +524,24 @@ i.bspin{width:15px;height:15px;border:2px solid currentColor;border-top-color:tr
 .selbar{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
 .seldock{position:fixed;left:0;right:0;bottom:calc(var(--nav-h) + var(--sab));z-index:30;display:flex;gap:8px;padding:10px 14px;background:var(--card);border-top:1px solid var(--brd);box-shadow:0 -4px 16px rgba(0,0,0,.06)}
 @media (min-width:900px){.seldock{left:230px;bottom:0}}
+/* v4.0 */
+.dlg-close{position:absolute;top:12px;right:12px;z-index:7}
+.sheet.center .dlg-t{padding-right:40px;max-height:30vh;overflow:auto;overflow-wrap:anywhere}
+.dlg-x{overflow-wrap:anywhere}.dlg-item{display:block;margin-bottom:4px;max-height:5.6em;overflow:hidden}
+#td > .sh-h:first-child{position:sticky;top:-16px;z-index:6;background:var(--card);margin:-16px -16px 12px;padding:14px 16px 10px;border-radius:22px 22px 0 0;box-shadow:0 1px 0 var(--brd)}
+.td-title,.hello h2,.row-t,.nmain b{overflow-wrap:anywhere}
+.td-title{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
+.td-title.open{-webkit-line-clamp:unset;display:block}
+.toast{max-height:30vh;overflow:hidden;overflow-wrap:anywhere}
+.g2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+@media (max-width:380px){.stb{font-size:11.5px;padding-left:2px;padding-right:2px}}
+.tts-bar{position:fixed;top:calc(var(--sat) + 64px);left:50%;transform:translateX(-50%);z-index:260;display:flex;align-items:center;gap:8px;background:#1b1f38;color:#fff;border-radius:99px;padding:6px 6px 6px 14px;box-shadow:0 8px 24px rgba(0,0,0,.3);font-size:13px;font-weight:600;max-width:calc(100% - 24px)}
+.tts-bar button{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;display:grid;place-items:center;border:0;cursor:pointer}
+.tts-l{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tts-sq{display:inline-block;width:12px;height:12px;border-radius:2px;background:currentColor}
+.tts-sq.sm{width:9px;height:9px;vertical-align:-1px}
+.tts-eq{display:flex;gap:2px;align-items:flex-end;height:14px}
+.tts-eq i{width:3px;background:#8b7bff;border-radius:2px;animation:eq 1s infinite ease-in-out}
+.tts-eq i:nth-child(2){animation-delay:.2s}.tts-eq i:nth-child(3){animation-delay:.4s}
+.tts-eq.off i{animation:none;height:4px}
+@keyframes eq{0%,100%{height:4px}50%{height:14px}}

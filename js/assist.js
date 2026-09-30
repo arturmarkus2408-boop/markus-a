@@ -76,7 +76,7 @@ function meetingSpeech(m) {
   if (made.length) out.push(t('Добавлено в планы') + ': ' + made.map(i => i.title + ', ' + whenLabel(i)).join('; ') + '.');
   return out.join('\n');
 }
-function speakMeeting(id) { const m = getItem(id); if (m && m.summary) Speech.say(meetingSpeech(m)); }
+function speakMeeting(id) { const m = getItem(id); if (m && m.summary) TTS.say(meetingSpeech(m)); }
 function lastMeetingWithSummary() { return sortByDate(live().filter(i => i.kind === 'meeting' && i.summary), true)[0] || null; }
 
 /* ---------- driving mode ---------- */
@@ -116,10 +116,10 @@ async function driveAnswer(q) {
     return Speech.say(briefingText(D.today()));
   }
   try {
-    const p = await AI.parseCommand(q);
+    const p = sanitizeParsed((await AI.parseCommand(q)) || {});
     if (p.intent === 'query') { const x = p.query || {}; return Speech.say(briefingText(x.from || D.today(), x.to || x.from || D.today())); }
     if (p.intent === 'find_slot') { const sl = p.slot || {}; const r = findAhead(+sl.durationMin || 60, D.today(), sl.untilDate || D.add(D.today(), 7), 3); return Speech.say(r.length ? t('Свободно') + ': ' + r.map(x => slotLabel(x, true)).join('; ') : t('Свободных окон не нашлось')); }
-    if (p.intent === 'create_note') { const n = newItem('note', { title: p.title || q.slice(0, 60), desc: p.noteText || q }); await saveItem(n); return Speech.say(t('Записал')); }
+    if (p.intent === 'create_note') { const n = newItem('note', { title: shortTitle(p.title || q, 80), desc: p.noteText || q }); await saveItem(n); return Speech.say(t('Записал')); }
     if (p.intent === 'create_task' || p.intent === 'create_meeting') { Speech.say(t('Проверьте детали на экране, когда остановитесь.')); return createFlow(p, q); }
     const ans = await AI.askData(q);
     Speech.say(ans);

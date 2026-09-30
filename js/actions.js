@@ -37,7 +37,7 @@ async function deleteItemFull(id, o = {}) {
   const what = [rec, nf ? tn(nf, 'файл|файла|файлов') .replace(/^/, nf + ' ') : ''].filter(Boolean).join(', ');
   const kind = it.kind === 'meeting' ? t('встречу') : it.kind === 'note' ? t('заметку') : t('задачу');
   if (!o.noAsk) {
-    const v = await dialog({ title: t('Удалить {k} «{x}»?', { k: kind, x: it.title }), text: esc(what ? t('Вместе с ней удалятся: {w}. С телефона и из облака. Отменить будет нельзя.', { w: what }) : t('Отменить будет нельзя.')), buttons: [{ l: t('Удалить'), v: true, d: 1 }, { l: t('Отмена'), v: false }] });
+    const v = await dialog({ title: t('Удалить {k}?', { k: kind }), text: '<b class="dlg-item">«' + esc(shortTitle(it.title, 90)) + '»</b><br>' + esc(what ? t('Вместе с ней удалятся: {w}. С телефона и из облака. Отменить будет нельзя.', { w: what }) : t('Отменить будет нельзя.')), buttons: [{ l: t('Удалить'), v: true, d: 1 }, { l: t('Отмена'), v: false }] });
     if (v !== true) return false;
   }
   await deleteItem(it);
@@ -51,7 +51,8 @@ async function deleteItemFull(id, o = {}) {
 
 /* ---------- one file: delete from the task / meeting / documents ---------- */
 async function deleteFile(holderId, fileId) {
-  const it = getItem(holderId); if (!it) return;
+  const draft = (typeof E !== 'undefined' && E && E.id === holderId) ? E : (typeof N !== 'undefined' && N && N.id === holderId) ? N : null;
+  const it = getItem(holderId) || draft; if (!it) return;
   const isRec = fileId === 'rec';
   const { f } = findFile(holderId, fileId); if (!f) return;
   const v = await dialog({ title: t('Удалить файл?'), text: esc('«' + f.name + '»\n' + t('Файл удалится с телефона и из облака. Отменить будет нельзя.')), buttons: [{ l: t('Удалить'), v: true, d: 1 }, { l: t('Отмена'), v: false }] });
@@ -62,10 +63,17 @@ async function deleteFile(holderId, fileId) {
     const drop = arr => { if (!Array.isArray(arr)) return arr; const k = arr.findIndex(x => x.id === fileId); if (k >= 0) meta = arr.splice(k, 1)[0]; return arr; };
     drop(it.files); (it.locations || []).forEach(p => drop(p.photos)); if (it.result) drop(it.result.files);
   }
-  const loneDoc = it.kind === 'note' && it.noteCat === 'Документы' && !(it.files || []).length && !(it.desc || '').trim();
-  if (loneDoc) await deleteItem(it); else await saveItem(it, { render: false });
+  // the same file must also disappear from an editor that is open right now, or saving it would bring the file back
+  if (draft && draft !== it) {
+    if (isRec) draft.recording = null;
+    else { const drop2 = arr => { if (Array.isArray(arr)) { const k = arr.findIndex(x => x.id === fileId); if (k >= 0) arr.splice(k, 1); } }; drop2(draft.files); (draft.locations || []).forEach(p => drop2(p.photos)); if (draft.result) drop2(draft.result.files); }
+  }
+  const saved = !!getItem(holderId);
+  const loneDoc = saved && it.kind === 'note' && it.noteCat === 'Документы' && !(it.files || []).length && !(it.desc || '').trim();
+  if (loneDoc) await deleteItem(it); else if (saved) await saveItem(it, { render: false });
   if (meta) purgeFiles([meta]);
-  if (typeof closeSheet === 'function' && Sheets.length) closeSheet();
+  if (draft && typeof edRenderFiles === 'function' && $('#e_files')) edRenderFiles();
+  { const top = typeof topSheet === 'function' && topSheet(); if (top && top.w.querySelector('#f_open')) closeSheet(); }   // close the file card only — never the editor underneath
   toast(t('Файл удалён'));
   render();
 }
@@ -77,7 +85,7 @@ async function itemMenu(id) {
   const sh = openSheet(`<div class="sh-h"><b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${kind === 'meeting' ? ic('users', 16) + ' ' : ''}${esc(it.title)}</b><button class="xbtn" onclick="closeSheet()">${ic('x', 18)}</button></div>
     <div class="hint" style="margin-top:0">${esc(whenLabel(it) || t('Без даты'))}</div>
     <div class="act3">
-      <button class="act" onclick="closeSheet();openEditor('${kind === 'note' ? 'task' : kind}',{id:'${id}'})">${ic('edit', 22)}<span>${t('Изменить')}</span></button>
+      <button class="act" onclick="closeSheet();${kind === 'note' ? `openItem('${id}')` : `openEditor('${kind}',{id:'${id}'})`}">${ic('edit', 22)}<span>${t('Изменить')}</span></button>
       <button class="act" onclick="closeSheet();openItemPdf('${id}')">${ic('pdf', 22)}<span>PDF</span></button>
       <button class="act red" onclick="closeSheet();deleteItemFull('${id}')">${ic('trash', 22)}<span>${t('Удалить')}</span></button>
     </div>
@@ -233,7 +241,7 @@ async function meetAudioToTelegram(id, silent, btn) {
       const { data, error } = await Cloud.sb.functions.invoke('telegram-bot', { body: {
         action: 'audio', fileId: r.fileId, parts: r.parts || 1, size: r.size || 0, mime: r.mime || 'audio/mp4', duration: r.duration || 0,
         name: (m.title.replace(/[\\/:*?"<>|]/g, ' ').slice(0, 60) || 'MARKUS-A') + (m.date ? ' ' + m.date : '') + '.' + recExt(r.mime),
-        title: m.title.slice(0, 60), caption: `🎙 <b>${esc2(m.title)}</b>${when ? '\n' + esc2(when) : ''} · ${fmtDur(r.duration || 0)}`
+        title: m.title.slice(0, 60), caption: `🎙 <b>${esc2(shortTitle(m.title, 150))}</b>${when ? '\n' + esc2(when) : ''} · ${fmtDur(r.duration || 0)}`
       } });
       if (error) { let msg = error.message; try { const j = error.context && await error.context.json(); if (j && j.error) msg = j.error; } catch (e) { } throw new Error(t('Не удалось отправить') + ': ' + msg); }
       if (data && data.error) throw new Error(data.error);
@@ -414,7 +422,7 @@ async function fileToTelegram(src) {
   const { data, error } = await Cloud.sb.functions.invoke('telegram-bot', { body: {
     action: 'audio', kind: src.isAudio ? 'audio' : 'doc', fileId: m.id, parts: m.parts, size: m.size, mime: src.type,
     name: String(src.name).replace(/[\\/:*?"<>|]/g, ' ').slice(0, 100), title: String(src.title || '').slice(0, 60),
-    caption: `📎 <b>${esc2(src.title || src.name)}</b>`
+    caption: `📎 <b>${esc2(shortTitle(src.title || src.name, 150))}</b>`
   } });
   if (error) { let msg = error.message; try { const j = error.context && await error.context.json(); if (j && j.error) msg = j.error; } catch (e) { } throw new Error(t('Не удалось отправить') + ': ' + msg); }
   if (data && data.error) throw new Error(data.error);

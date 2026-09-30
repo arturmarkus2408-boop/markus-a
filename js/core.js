@@ -64,6 +64,7 @@ const DB = {
       r.onerror = () => rej(r.error);
     });
   },
+  clear(store) { return DB.tx(store, 'readwrite', s => s.clear()); },
   tx(store, mode, fn) {
     return new Promise((res, rej) => {
       const tr = DB.db.transaction(store, mode);
@@ -188,7 +189,7 @@ async function storeFile(file, name) {
 }
 async function getFileBlob(f) {
   let b = await DB.get('files', f.id);
-  if (!b && f.cloud && window.Cloud && Cloud.user) {
+  if (!b && window.Cloud && Cloud.user && Cloud.sb) {   // v4.0: also when the card's «in the cloud» mark is out of date
     b = await Cloud.download(f.id, f.parts, f.type);
     if (b && !S.set.cloudOnly) await DB.put('files', b, f.id);
   }
@@ -197,6 +198,16 @@ async function getFileBlob(f) {
 function b64(blob) {
   return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1]); r.onerror = () => rej(r.error); r.readAsDataURL(blob); });
 }
+/* v4.0: a title is one short line. Long text (an AI answer, a forwarded message) goes into the description —
+   nothing is lost, and screens / dialogs / reminders stay readable */
+function splitTitle(src, max = 120) {
+  const full = String(src || '').trim(), s = full.replace(/\s+/g, ' ');
+  if (s.length <= max) return { title: s, rest: '' };
+  const m = s.slice(0, max + 1).match(/^(.{15,}?[.!?…])(\s|$)/);
+  const title = m ? m[1] : s.slice(0, max).replace(/\s+\S*$/, '') + '…';
+  return { title, rest: full };
+}
+function shortTitle(src, max) { return splitTitle(src, max).title; }
 function downloadBlob(blob, name) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 3000);
@@ -223,7 +234,7 @@ function loadScript(src) {
 /* ================= toast / sound / notifications ================= */
 let toastT;
 function toast(msg, ms = 2600) {
-  const el = $('#toast'); el.textContent = msg; el.classList.add('show');
+  const el = $('#toast'); msg = String(msg == null ? '' : msg); el.textContent = msg.length > 320 ? msg.slice(0, 300) + '…' : msg; el.classList.add('show');
   clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), ms);
 }
 /* a button that shows what is happening: pressed → «…» (can't be pressed twice) → ✓ green / ✗ red */

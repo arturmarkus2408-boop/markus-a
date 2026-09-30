@@ -219,7 +219,7 @@ function notesListHTML() {
 }
 SCREENS.notes = () => {
   let b = `<div class="search">${ic('search', 18)}<input placeholder="${esc(t('Поиск заметок…'))}" value="${esc(S.noteQ)}" oninput="S.noteQ=this.value;$('#nl').innerHTML=notesListHTML()"></div>`;
-  b += `<div class="chips"><button class="chip ${S.noteCat === 'all' ? 'on' : ''}" onclick="S.noteCat='all';render()">${t('Все')}</button>${S.set.noteCats.map(c => `<button class="chip ${S.noteCat === c ? 'on' : ''}" onclick="S.noteCat='${esc(c)}';render()">${esc(noteCatName(c))}</button>`).join('')}</div>`;
+  b += `<div class="chips"><button class="chip ${S.noteCat === 'all' ? 'on' : ''}" onclick="S.noteCat='all';render()">${t('Все')}</button>${S.set.noteCats.map(c => `<button class="chip ${S.noteCat === c ? 'on' : ''}" onclick="S.noteCat=S.set.noteCats[${S.set.noteCats.indexOf(c)}];render()">${esc(noteCatName(c))}</button>`).join('')}</div>`;
   b += `<div id="nl">${notesListHTML()}</div>`;
   return { top: titleTop(t('Заметки')), body: b, dock: fab(`openNoteEditor(null,{noteCat:S.noteCat==='all'?'Идеи':S.noteCat})`, `<button class="fab sec2" onclick="openVoice('note')" aria-label="${esc(t('Надиктовать заметку'))}">${ic('mic', 24)}</button>`) };
 };
@@ -292,7 +292,7 @@ SCREENS.meeting = () => {
     after: async () => {
       loadThumbs($('#screen'));
       const box = $('#m_audio'); if (!box || !m.recording) return;
-      const blob = await getFileBlob({ id: m.recording.fileId, cloud: m.recording.cloud, parts: m.recording.parts, type: m.recording.mime });
+      const blob = await recBlobCached(m);
       box.innerHTML = blob ? `<audio controls style="width:100%" src="${URL.createObjectURL(blob)}"></audio><button class="btn ghost full" style="margin-top:6px" onclick="audioBoost(this)">🔊 ${t('Усилить тихие звуки')}</button>` : `<div class="hint warn">${t('Аудио есть только на другом устройстве')}</div>`;
     }
   };
@@ -374,6 +374,13 @@ async function meetToTelegram(id, silent, btn) {
 }
 
 /* ================= RECORDINGS ================= */
+const RecUrl = new Map();   // fileId → Blob, so a redraw does not load the whole recording again
+async function recBlobCached(m) {
+  const k = m.recording.fileId; if (RecUrl.has(k)) return RecUrl.get(k);
+  const b = await getFileBlob({ id: k, cloud: m.recording.cloud, parts: m.recording.parts, type: m.recording.mime });
+  if (b) { RecUrl.set(k, b); if (RecUrl.size > 3) RecUrl.delete(RecUrl.keys().next().value); }
+  return b;
+}
 async function recBlob(id) { const m = getItem(id); const b = m && m.recording && await getFileBlob({ id: m.recording.fileId, cloud: m.recording.cloud, parts: m.recording.parts, type: m.recording.mime }); if (!b) toast(t('Аудио есть только на другом устройстве')); return b; }
 function shareRec(id) { shareStored(id, 'rec'); }
 async function saveRec(id) { const b = await recBlob(id); if (!b) return; downloadBlob(b, findFile(id, 'rec').f.name); toast(t('Сохранено в «Загрузки» телефона')); }
@@ -526,7 +533,7 @@ async function askMarkus() {
 
 /* ================= SETTINGS ================= */
 function setVal(k, v) { S.set[k] = v; saveSettings(); if (['morningTime', 'eveTime', 'dayEnd', 'nagHours'].includes(k)) recomputeAll(); }
-async function recomputeAll() { for (const it of S.items.filter(isOpen)) await saveItem(it, { render: false }); }
+async function recomputeAll() { for (const it of S.items.filter(isOpen)) { it._dirty = true; await saveItem(it, { render: false, touch: false }); } }   // new reminder times go to the server, but do not overwrite edits made on another device
 SCREENS.settings = () => {
   const st = S.set, cloudOk = Cloud.configured(), u = Cloud.user, p = Cloud.profile;
   const tInp = (k) => `<input class="inp" type="time" value="${st[k]}" onchange="setVal('${k}',this.value)">`;
@@ -570,7 +577,10 @@ SCREENS.settings = () => {
     <div class="hint">${t('Если Google отключит эту модель или закончится её бесплатный лимит, MARKUS-A сам переключится на другую доступную модель Gemini.')}${AI.lastModel ? ' ' + t('Сейчас работает: {m}', { m: esc(AI.lastModel) }) : ''}</div>
     <div class="btns"><button class="btn ghost" onclick="testAI()">${t('Проверить AI')}</button></div>
     <label class="lbl">${t('Задачи из встреч')}</label><div class="seg"><button class="${st.autoTasks === 'confirm' ? 'on' : ''}" onclick="setVal('autoTasks','confirm');render()">${t('С подтверждением')}</button><button class="${st.autoTasks === 'auto' ? 'on' : ''}" onclick="setVal('autoTasks','auto');render()">${t('Автоматически')}</button></div>
-    <div class="sw-row"><div><b>${t('Отвечать голосом')}</b><span>${t('MARKUS-A озвучивает ответы на голосовые команды')}</span></div><button class="sw ${st.voiceReply ? 'on' : ''}" onclick="setVal('voiceReply',!S.set.voiceReply);render()"></button></div></div>`;
+    <div class="sw-row"><div><b>${t('Отвечать голосом')}</b><span>${t('MARKUS-A озвучивает ответы на голосовые команды')}</span></div><button class="sw ${st.voiceReply ? 'on' : ''}" onclick="setVal('voiceReply',!S.set.voiceReply);render()"></button></div>
+    <label class="lbl">${t('Голос ответов')}</label><select class="inp" onchange="setVal('ttsVoice',this.value);TTS.cache.clear()">${TTS_VOICES.map(([k, l]) => `<option value="${k}" ${(st.ttsVoice || 'Charon') === k ? 'selected' : ''}>${t(l)}</option>`).join('')}</select>
+    <div class="btns" style="margin-top:6px"><button class="btn ghost" onclick="TTS.say(t('Здравствуйте! Я MARKUS-A. Так звучит мой голос.'))">${ic('play', 16)} ${t('Послушать')}</button></div>
+    <div class="hint">${t('Голоса Gemini звучат как живой человек и работают через ваш ключ Gemini (бесплатно, с дневным лимитом). Если лимит закончится или нет интернета — читает голос телефона.')}</div></div>`;
   b += sec(t('Облако и синхронизация')) + '<div class="set-card">';
   if (!cloudOk) b += `<div class="hint" style="margin-top:12px">${t('Облако не настроено. Впишите адрес и ключ Supabase в файл config.js на GitHub — или сюда:')}</div>
     <label class="lbl">Supabase URL</label><input class="inp" id="s_url" placeholder="https://xxxx.supabase.co" value="${esc(st.sbUrl)}">
@@ -583,7 +593,7 @@ SCREENS.settings = () => {
     <div class="btns"><button class="btn ghost" onclick="doAuth('link')">${ic('mail', 16)} ${t('Войти по ссылке из письма')}</button><button class="btn ghost" onclick="doAuth('reset')">${t('Забыли пароль?')}</button></div>`;
   else b += `<div class="sw-row"><div><b>${esc(u.email)}</b><span>${Cloud.lastError ? '<span class="warn">' + t('Ошибка') + ': ' + esc(Cloud.lastError) + '</span>' : Cloud.lastSync ? t('Синхронизировано {t}', { t: Cloud.lastSync.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' }) }) : t('Подключено')}</span></div></div>
     <div class="btns"><button class="btn ghost" onclick="withBusy(this,async()=>{await Cloud.sync();if(Cloud.lastError)throw new Error(t('Ошибка синхронизации')+': '+Cloud.lastError);},{busy:t('Синхронизирую…'),ok:t('Синхронизировано')}).then(()=>setTimeout(render,2600))">${ic('cloud', 16)} ${t('Синхронизировать')}</button><button class="btn ghost" onclick="changePassword()">${t('Сменить пароль')}</button></div>
-    <div class="btns"><button class="btn ghost" onclick="Cloud.signOut().then(render)">${t('Выйти')}</button></div>`;
+    <div class="btns"><button class="btn ghost" onclick="doSignOut(this)">${t('Выйти')}</button></div>`;
   b += '</div>';
   b += sec('Telegram') + '<div class="set-card">';
   if (!u) b += `<div class="hint" style="margin-top:12px">${t('Сначала войдите в облако. Бот присылает напоминания, даже когда приложение закрыто, и принимает команды текстом и голосом.')}</div>`;
@@ -596,7 +606,7 @@ SCREENS.settings = () => {
     <div class="btns"><button class="btn ghost" onclick="freePhoneMemory()">${t('Освободить память телефона')}</button></div></div>`;
   b += sec(t('Данные')) + `<div class="set-card"><div class="hint" style="margin-top:12px">${t('Резервная копия задач, встреч, контактов и заметок (без файлов).')}</div><div class="btns"><button class="btn ghost" onclick="exportBackup()">${ic('download', 16)} ${t('Скачать копию')}</button><label class="btn ghost">${t('Загрузить копию')}<input type="file" accept=".json,application/json" hidden onchange="importBackup(this.files[0])"></label></div>
     ${window._installPrompt ? `<div class="btns"><button class="btn pri" onclick="installApp()">${t('Установить приложение')}</button></div>` : ''}</div>`;
-  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 3.9</div>`;
+  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 4.0</div>`;
   return { top: titleTop(t('Настройки')), body: b, after: async () => { const i = await storageInfo(); const el = $('#st_info'); if (el) el.textContent = t('Занято на телефоне: {a} · файлов: {n}, из них в облаке: {c}', { a: mb(i.used), n: i.n, c: i.cloud }); } };
 };
 async function testAI() { try { toast(t('Проверяю…')); const r = await AI.call([{ text: 'Reply with one word in ' + langName() + ': works' }]); toast(t('AI отвечает: {r} ✓', { r: r.slice(0, 40) }), 3000); } catch (e) { toast(e.message, 5000); } }
@@ -611,6 +621,20 @@ async function doAuth(mode) {
     else { const r = await Cloud.signUp(em, pw); toast(r === 'confirm' ? t('Проверьте почту и подтвердите email, затем войдите') : t('Аккаунт создан ✓'), 5000); }
   } catch (e) { toast(e.message, 5000); }
   render();
+}
+/* v4.0: signing out cleans this device, so the next account never gets someone else's tasks mixed in */
+async function doSignOut(btn) {
+  await withBusy(btn, () => Cloud.sync(), { busy: t('Сохраняю в облако…'), ok: t('Готово') });
+  const pend = S.items.filter(i => i._dirty).length;
+  const v = await dialog({
+    title: t('Выйти из аккаунта?'),
+    text: esc(pend ? t('{n} записей ещё не отправлены в облако (нет интернета?). Если выйти и очистить устройство, они пропадут.', { n: pend }) : t('Всё сохранено в облаке. С этого устройства данные будут убраны — после входа они вернутся.')),
+    buttons: (pend ? [] : [{ l: t('Выйти'), v: 'clear', p: 1 }]).concat(pend ? [{ l: t('Выйти, но оставить данные на устройстве'), v: 'keep' }] : [], [{ l: t('Отмена'), v: null }])
+  });
+  if (!v) return;
+  await Cloud.signOut();
+  if (v === 'clear') { S.items = []; await DB.clear('items').catch(() => { }); await DB.clear('files').catch(() => { }); }
+  toast(t('Вы вышли из аккаунта')); render();
 }
 async function changePassword() {
   const v = await dialog({ title: t('Новый пароль'), html: `<input class="inp" type="password" id="np1" placeholder="${esc(t('Новый пароль (от 6 символов)'))}"><input class="inp" type="password" id="np2" style="margin-top:8px" placeholder="${esc(t('Повторите пароль'))}">`, buttons: [{ l: t('Сохранить'), p: 1, v: sh => { const a = $('#np1', sh).value, b2 = $('#np2', sh).value; if (a.length < 6) { toast(t('Пароль — минимум 6 символов')); return false; } if (a !== b2) { toast(t('Пароли не совпадают')); return false; } return a; } }, { l: t('Отмена'), v: null }] });

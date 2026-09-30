@@ -2,6 +2,11 @@
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 /* ================= dictation into a field ================= */
+function srErrToast(err, got) {
+  const m = { 'not-allowed': 'Разрешите доступ к микрофону', 'service-not-allowed': 'Разрешите доступ к микрофону', 'no-speech': 'Не расслышал — нажмите на микрофон и говорите', network: 'Для распознавания речи нужен интернет', 'not-supported': 'На телефоне не работает распознавание речи. Включите приложение «Google» (Настройки → Приложения → Google → Включить) и повторите.' }[err];
+  if (m) toast(t(m), 5000);
+  else if (!got && err !== 'aborted-by-user') toast(t('Распознавание речи не запустилось — нажмите на микрофон ещё раз. Если не помогает: Настройки телефона → «Голосовой ввод Google» должен быть включён.'), 6000);
+}
 let dict = null;
 function stopDictation() { if (dict) { try { dict.rec.stop(); } catch (e) { } if (dict.btn) dict.btn.classList.remove('on'); dict = null; } }
 function dictateInto(id, btn, multiline) {
@@ -22,12 +27,7 @@ function dictateInto(id, btn, multiline) {
       if (dict) dict.got = true;
     }
   };
-  rec.onerror = e => {
-    const m = { 'not-allowed': 'Разрешите доступ к микрофону', 'service-not-allowed': 'Разрешите доступ к микрофону', 'no-speech': 'Не расслышал — нажмите на микрофон и говорите', network: 'Для распознавания речи нужен интернет', 'not-supported': 'На телефоне не работает распознавание речи. Включите приложение «Google» (Настройки → Приложения → Google → Включить) и повторите.' }[e.error];
-    if (m) toast(t(m), 5000);
-    else if (!(dict && dict.got)) toast(t('Распознавание речи не запустилось — нажмите на микрофон ещё раз. Если не помогает: Настройки телефона → «Голосовой ввод Google» должен быть включён.'), 6000);
-    stopDictation();
-  };
+  rec.onerror = e => { srErrToast(e.error, dict && dict.got); stopDictation(); };
   rec.onend = () => { if (dict && dict.rec === rec) { try { rec.start(); } catch (e) { stopDictation(); } } };
   try { rec.start(); } catch (e) { stopDictation(); }
 }
@@ -99,11 +99,12 @@ async function handleCommand(text, o = {}) {
   if (!AI.ready()) {
     closeVoice();
     toast(t('Для умного разбора добавьте ключ AI в настройках'), 4000);
-    return openEditor('task', { title: text[0].toUpperCase() + text.slice(1) });
+    const st = splitTitle(text); return openEditor('task', { title: cap(st.title), desc: st.rest });
   }
   let p;
-  try { p = await AI.parseCommand(text); }
-  catch (e) { closeVoice(); toast(e.message, 5000); return openEditor('task', { title: text }); }
+  try { p = await AI.parseCommand(text); if (!p || typeof p !== 'object' || Array.isArray(p)) throw new Error(t('AI вернул непонятный ответ')); }
+  catch (e) { closeVoice(); toast(e.message, 5000); const st = splitTitle(text); return openEditor('task', { title: cap(st.title), desc: st.rest }); }
+  sanitizeParsed(p);
   if (V) { $$('#vo_steps i').forEach(i => i.className = 'ok'); await sleep(350); }
   closeVoice();
   if (o.forceCreate && !['create_task', 'create_meeting'].includes(p.intent)) p.intent = 'create_task';
@@ -111,15 +112,15 @@ async function handleCommand(text, o = {}) {
     case 'create_reminder': return reminderFlow(p, text);
     case 'create_task': case 'create_meeting': return createFlow(p, text);
     case 'create_note': {
-      const n = newItem('note', { title: p.title || (p.noteText || text).slice(0, 60), desc: p.noteText || text });
+      const n = newItem('note', { title: shortTitle(p.title || p.noteText || text, 80), desc: p.noteText || text });
       await saveItem(n); toast(t('Заметка сохранена ✓')); speak(t('Записал')); return openNoteEditor(n);
     }
     case 'query': return queryFlow(p);
     case 'find_slot': return slotFlow(p);
     default: {
       const v = await dialog({ title: t('Не совсем понял'), text: esc(p.reply || t('Попробуйте сказать иначе, например: «Завтра в 10 подготовить договор».')), buttons: [{ l: t('Создать задачу с этим текстом'), v: 'task', p: 1 }, { l: t('Сохранить как заметку'), v: 'note' }, { l: t('Повторить'), v: 'again' }, { l: t('Закрыть'), v: null }] });
-      if (v === 'task') openEditor('task', { title: text });
-      else if (v === 'note') { const n = newItem('note', { title: text.slice(0, 60), desc: text }); await saveItem(n); toast(t('Сохранено')); }
+      if (v === 'task') { const st = splitTitle(text); openEditor('task', { title: cap(st.title), desc: st.rest }); }
+      else if (v === 'note') { const n = newItem('note', { title: shortTitle(text, 80), desc: text }); await saveItem(n); toast(t('Сохранено')); }
       else if (v === 'again') openVoice();
     }
   }
@@ -139,16 +140,31 @@ function matchContacts(names) {
   return ids;
 }
 const HINT_TIMES = { morning: ['09:00', '10:00', '11:00'], afternoon: ['13:00', '14:00', '15:00'], evening: ['18:00', '19:00', '20:00'] };
+/* AI answers are checked: a wrong date or time must never break the calendar */
+function sanitizeParsed(p) {
+  const okD = x => typeof x === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x) && !isNaN(D.parse(x));
+  const okT = x => typeof x === 'string' && /^([01]?\d|2[0-3]):[0-5]\d$/.test(x);
+  if (!okD(p.date)) p.date = null;
+  ['start', 'end'].forEach(k => { if (!okT(p[k])) p[k] = null; else p[k] = p[k].padStart(5, '0'); });
+  if (Array.isArray(p.dateOptions)) p.dateOptions = p.dateOptions.filter(okD); else p.dateOptions = [];
+  if (p.remindAt && isNaN(new Date(p.remindAt))) p.remindAt = null;
+  if (p.event && !okD(p.event.date)) p.event = null;
+  if (p.title != null && typeof p.title !== 'string') p.title = String(p.title);
+  if (!Array.isArray(p.participants)) p.participants = [];
+  return p;
+}
 async function createFlow(p, text) {
   const kind = p.intent === 'create_meeting' ? 'meeting' : 'task';
+  const long = !p.title || String(p.title).length > 120 ? splitTitle(text) : null;
   const d = newItem(kind, {
-    title: cap(p.title || text),
+    title: cap(shortTitle(p.title || text)),
     priority: ['normal', 'high', 'critical'].includes(p.priority) ? p.priority : 'normal',
     participants: Array.isArray(p.participants) ? p.participants : [],
     place: p.place || '', category: matchCat(p.category, kind),
     date: p.date || null, start: p.start || null, end: p.end || null
   });
   d.contactIds = matchContacts(d.participants);
+  if (long && long.rest) d.desc = long.rest;   // the whole text is kept in the description
   const opts = Array.isArray(p.dateOptions) ? p.dateOptions.filter(Boolean) : [];
   if (opts.length > 1 && (!d.date || opts.includes(d.date))) {
     const v = await askChoice(t('Уточните дату'), t('Вы имеете в виду {x}?', { x: opts.map(x => D.human(x)).join(' / ') }), opts.map(x => ({ l: D.human(x) + ', ' + D.dowFull(D.parse(x).getDay()), v: x, p: 1 })), { type: 'date', label: t('Другая дата') });
@@ -193,7 +209,7 @@ function isBirthday(x) { return /д(ень|\.)\s*р(ождени|\.)|днюх|ю
 async function reminderFlow(p, text) {
   const ev = p.event && p.event.date ? p.event : null;
   const bday = !!(ev && ['birthday', 'anniversary'].includes(ev.type)) || isBirthday(p.title || text);
-  let title = cap(p.title || text);
+  let title = cap(shortTitle(p.title || text));
   if (bday && !/^\p{Extended_Pictographic}/u.test(title)) title = '🎂 ' + title;
   let at = p.remindAt ? new Date(p.remindAt) : null; if (at && isNaN(at)) at = null;
   if (!at) {
@@ -402,7 +418,7 @@ function openRecControls() {
       <button class="btn pri" onclick="closeSheet();Rec.stop()">${ic('rec', 18)} ${t('Остановить и сохранить')}</button>
       <button class="btn ghost" onclick="closeSheet();Rec.pause()">${a.pauseAt ? ic('play', 18) + ' ' + t('Продолжить') : ic('pause', 18) + ' ' + t('Пауза')}</button>
       <button class="btn ghost" onclick="closeSheet();Rec.extend(30)">+30 ${t('мин')}</button>
-      <button class="btn ghost" onclick="closeSheet();Rec.active.discreet=false;recDot();showRec()">${t('Показать экран записи')}</button>
+      <button class="btn ghost" onclick="closeSheet();if(Rec.active){Rec.active.discreet=false;recDot();showRec()}">${t('Показать экран записи')}</button>
     </div>`, { cls: 'center' });
 }
 function showRec() {
@@ -517,7 +533,7 @@ async function redoMeeting(id) {
   if (v) processMeeting(id, { reuse: v === 'reuse', again: true });
 }
 async function processMeeting(id, o = {}) {
-  const m = getItem(id); if (!m || !m.recording) return;
+  let m = getItem(id); if (!m || !m.recording) return;
   if (!AI.ready()) return toast(t('Добавьте ключ Gemini в Настройках → AI'), 4000);
   if (Processing.has(id)) return toast(t('AI уже обрабатывает эту запись…'));
   Processing.add(id);
@@ -531,13 +547,15 @@ async function processMeeting(id, o = {}) {
     if (!(o.reuse && m.transcript)) {
       const blob = await getFileBlob({ id: m.recording.fileId, cloud: m.recording.cloud, parts: m.recording.parts, type: m.recording.mime });
       if (!blob) throw new Error(t('Аудиофайл не найден на этом устройстве'));
-      m.transcript = await AI.transcribe(blob, m.recording.mime, m,
+      const tr = await AI.transcribe(blob, m.recording.mime, m,
         pct => sh && ($('#pm_s', sh).textContent = t('Загружаю запись для AI… {p}%', { p: pct })),
         (k, n) => sh && ($('#pm_s', sh).textContent = t('Расшифровываю запись: часть {k} из {n} (по 10 минут)…', { k, n })));
+      m = getItem(id) || m; m.transcript = tr;   // the meeting may have been edited meanwhile — keep those edits
       await saveItem(m, { render: false });
     }
     step(t('Анализирую: темы, планы, цифры, решения, задачи…'));
     const a = await AI.analyzeMeeting(m);
+    m = getItem(id) || m;
     m.summary = a.summary || {};
     const items = Array.isArray(a.items) ? a.items : (a.tasks || []);
     // re-processing must not create the same tasks again
@@ -545,10 +563,11 @@ async function processMeeting(id, o = {}) {
     const key = x => String(x.title || '').toLowerCase().replace(/[^a-zа-яё0-9ўқғҳ]+/gi, ' ').trim();
     m.proposed = items.filter(x => x && x.title).map(x => { const old = before.find(b => key(b) === key(x)); return Object.assign({ type: 'task' }, x, old ? { state: old.state, itemId: old.itemId } : { state: 'new' }); });
     before.filter(b => !m.proposed.some(x => key(x) === key(b))).forEach(b => m.proposed.push(b));
+    await saveItem(m, { render: false });   // the summary is safe before the next long AI step
     // my own review — separately, so a problem here never spoils the summary
     if (S.set.coach !== false && !m.emergency) {
       if (sh) $('#pm_s', sh).textContent = t('Готовлю разбор: как вы провели встречу…');
-      try { m.coach = await AI.coachMeeting(m); m.coach.at = new Date().toISOString(); } catch (e) { m.coachErr = e.message; }
+      try { const cc = await AI.coachMeeting(m); m = getItem(id) || m; m.coach = cc; m.coach.at = new Date().toISOString(); delete m.coachErr; } catch (e) { m.coachErr = e.message; }
     }
     delete m.aiError;
     await saveItem(m);
@@ -583,7 +602,7 @@ function proposedToItem(x, m) {
   const names = Array.isArray(x.participants) && x.participants.length ? x.participants : (m.participants || []);
   const cids = Array.from(new Set(matchContacts(names).concat(x.participants && x.participants.length ? [] : (m.contactIds || []))));
   if (x.type === 'meeting') {
-    const it = newItem('meeting', { title: x.title, date: x.date || null, start: x.start || null, end: x.end || null, priority: prio, place: x.place || '',
+    const it = newItem('meeting', { title: shortTitle(x.title, 150), date: x.date || null, start: x.start || null, end: x.end || null, priority: prio, place: x.place || '',
       participants: names, contactIds: cids, linked: [m.id],
       desc: [x.goals ? t('Цели и что обсудить') + ': ' + x.goals : '', x.notes || '', from].filter(Boolean).join('\n\n') });
     if (it.start && !it.end) it.end = D.addMin(it.start, S.set.defaultDur || 60);
@@ -594,7 +613,8 @@ function proposedToItem(x, m) {
     return it;
   }
   const control = x.type === 'control';
-  const title = control && !/^(проконтрол|control|nazorat|kontrol)/i.test(x.title) ? t('Проконтролировать') + ': ' + x.title : x.title;
+  const xt = shortTitle(x.title, 150);
+  const title = control && !/^(проконтрол|control|nazorat|kontrol)/i.test(xt) ? t('Проконтролировать') + ': ' + xt : xt;
   const it = newItem('task', { title, date: x.date || null, start: x.start || null, end: x.end || null, priority: prio, participants: names, contactIds: cids, linked: [m.id],
     desc: `${from}${x.who ? '\n' + t('Исполнитель') + ': ' + x.who : ''}${x.dueTime ? '\n' + t('Срок') + ': ' + t('до {t}', { t: x.dueTime }) : ''}${x.notes ? '\n' + x.notes : ''}` });
   if (it.start && !it.end) it.end = D.addMin(it.start, 30);
@@ -644,9 +664,10 @@ async function askMeetingTime(id) {
       <div class="sw-row"><div><b>${t('Автозапись встречи')}</b><span>${t('Начнётся за {n} мин до начала', { n: S.set.recPre })}</span></div><button class="sw ${m.autoRecord ? 'on' : ''}" id="mt_a" onclick="this.classList.toggle('on')"></button></div>`,
     buttons: [{ l: t('Сохранить'), p: 1, v: sh => { const s0 = $('#mt_s', sh).value; if (!s0) { toast(t('Укажите время')); return false; } return { s: s0, e: $('#mt_e', sh).value, a: $('#mt_a', sh).classList.contains('on') }; } }, { l: t('Позже'), v: null }] });
   if (!v) return;
+  const was = { start: m.start, end: m.end, autoRecord: m.autoRecord, needsTime: m.needsTime, reminders: m.reminders };
   m.start = v.s; m.end = v.e && D.toMin(v.e) > D.toMin(v.s) ? v.e : D.addMin(v.s, S.set.defaultDur || 60);
   m.autoRecord = v.a; m.needsTime = false;
   m.reminders = defaultReminders(m.priority, true);
-  const ok = await resolveConflicts(m); if (!ok) return;
+  const ok = await resolveConflicts(m); if (!ok) { Object.assign(m, was); return; }
   await saveItem(m); toast(t('Сохранено ✓'));
 }

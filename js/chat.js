@@ -6,7 +6,7 @@
    · «искать в интернете» — Google search for fresh facts (prices, news, laws), with sources
    · answers can be read aloud, copied or saved as a note
    ========================================================================== */
-const Chat = { msgs: [], loaded: false, busy: false };
+const Chat = { msgs: [], loaded: false, busy: false, rec: null };
 const CHAT_MAX = 60;
 async function chatLoad() { if (Chat.loaded) return; Chat.loaded = true; try { Chat.msgs = (await DB.get('meta', 'chat')) || []; } catch (e) { Chat.msgs = []; } }
 function chatSave() { DB.put('meta', Chat.msgs.slice(-CHAT_MAX), 'chat').catch(() => { }); }
@@ -23,7 +23,7 @@ function chatMd(x) {
 function chatBubble(m, i) {
   if (m.role === 'user') return `<div class="cb me">${esc(m.text).replace(/\n/g, '<br>')}</div>`;
   const src = (m.src || []).length ? `<div class="cb-src">${t('Источники')}: ${m.src.map(s => `<a href="${esc(s.uri)}" target="_blank" rel="noopener">${esc(s.title)}</a>`).join(' · ')}</div>` : '';
-  return `<div class="cb ai${m.err ? ' err' : ''}">${chatMd(m.text)}${src}${m.err ? '' : `<div class="cb-act"><button onclick="Speech.say(Chat.msgs[${i}].text)">${ic('play', 14)}</button><button onclick="chatCopy(${i})">${t('Копировать')}</button><button onclick="chatNote(${i})">${t('В заметку')}</button></div>`}</div>`;
+  return `<div class="cb ai${m.err ? ' err' : ''}">${chatMd(m.text)}${src}${m.err ? '' : `<div class="cb-act"><button onclick="chatSpeak(${i})" aria-label="${esc(t('Прослушать'))}">${TTS.on && TTS.owner === i ? '<i class="tts-sq sm"></i> ' + t('Стоп') : ic('play', 14) + ' ' + t('Прослушать')}</button><button onclick="chatCopy(${i})">${t('Копировать')}</button><button onclick="chatNote(${i})">${t('В заметку')}</button></div>`}</div>`;
 }
 function chatListHTML() {
   if (!Chat.msgs.length) return `<div class="empty"><b>💬</b>${t('Спросите что угодно — как в Gemini. Например:')}<div class="chat-ex">${[
@@ -43,7 +43,7 @@ SCREENS.chat = () => {
       <button class="chip ${st.chatWeb ? 'on' : ''}" onclick="setVal('chatWeb',!S.set.chatWeb);render()">${ic('globe', 13)} ${t('Искать в интернете')}</button>
     </div>
     <div id="chatList" class="chat-list">${chatListHTML()}</div>
-    <div class="chat-in"><textarea id="ch_in" class="inp" rows="1" placeholder="${esc(t('Сообщение…'))}" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chatSend()}" oninput="Chat.draft=this.value;this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'">${esc(Chat.draft || '')}</textarea><button class="mic-btn" type="button" onclick="dictateInto('ch_in',this,true)">${ic('mic', 18)}</button><button class="chat-send" onclick="chatSend()" aria-label="${esc(t('Отправить'))}">${ic('send', 18)}</button></div>`;
+    <div class="chat-in"><textarea id="ch_in" class="inp" rows="1" placeholder="${esc(t('Сообщение…'))}" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chatSend()}" oninput="Chat.draft=this.value;this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'">${esc(Chat.draft || '')}</textarea><button class="mic-btn ${Chat.rec ? 'on' : ''}" type="button" onclick="chatMic(this)" aria-label="${esc(t('Спросить голосом'))}">${ic('mic', 18)}</button><button class="chat-send" onclick="chatSend()" aria-label="${esc(t('Отправить'))}">${ic('send', 18)}</button></div>`;
   const clear = `<button class="tbtn" onclick="chatClear()" aria-label="${esc(t('Очистить'))}" title="${esc(t('Новый разговор'))}">${ic('trash')}</button>`;
   return { top: titleTop(t('Чат с AI'), { extra: clear }), body, after: () => chatScroll() };
 };
@@ -62,7 +62,35 @@ function chatContext() {
   const nodate = live().filter(i => isOpen(i) && !i.date).slice(0, 20).map(i => '— ' + i.title);
   return `${nowContext()}\nДела пользователя (±2–3 недели):\n${its.map(line).join('\n') || '(нет)'}${nodate.length ? '\nБез даты:\n' + nodate.join('\n') : ''}`.slice(0, 60000);
 }
-async function chatSend() {
+/* 🎤 ask by voice: speak — the question goes by itself — the answer is read aloud */
+function chatMic(btn) {
+  if (Chat.rec) { try { Chat.rec.stop(); } catch (e) { } return; }
+  if (!SR) return toast(t('Голосовой ввод работает в Chrome / Edge / Safari'));
+  TTS.stop(); stopDictation();
+  const inp = $('#ch_in'); const base = inp ? inp.value.trim() : '';
+  const rec = new SR(); rec.lang = srLang(); rec.continuous = false; rec.interimResults = true;
+  Chat.rec = rec; let fin = '', heard = false;
+  btn.classList.add('on'); if (inp) inp.placeholder = t('Слушаю… говорите');
+  rec.onresult = e => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) { const tx = e.results[i][0].transcript; if (e.results[i].isFinal) fin += (fin ? ' ' : '') + tx.trim(); else interim += tx; }
+    heard = true;
+    const el = $('#ch_in'); if (el) { el.value = [base, fin, interim.trim()].filter(Boolean).join(' '); Chat.draft = el.value; }
+  };
+  rec.onerror = e => { if (e.error !== 'aborted') srErrToast(e.error, heard); };
+  rec.onend = () => {
+    Chat.rec = null;
+    const b = $('.chat-in .mic-btn'); if (b) b.classList.remove('on');
+    const el = $('#ch_in'); if (el) el.placeholder = t('Сообщение…');
+    if (fin && el && el.value.trim()) chatSend({ voice: true });
+  };
+  try { rec.start(); toast(t('Говорите — вопрос отправится сам, ответ прозвучит голосом'), 2500); } catch (e) { Chat.rec = null; btn.classList.remove('on'); }
+}
+function chatSpeak(i) {
+  if (TTS.on && TTS.owner === i) return TTS.stop();
+  TTS.say(Chat.msgs[i].text, { owner: i }); chatRedraw();
+}
+async function chatSend(o = {}) {
   const inp = $('#ch_in'); if (!inp || Chat.busy) return;
   const q = inp.value.trim(); if (!q) return;
   if (!AI.ready()) return toast(t('Добавьте ключ Gemini в Настройках → AI'), 4000);
@@ -84,4 +112,6 @@ async function chatSend() {
   Chat.busy = false;
   Chat.msgs.push(err ? { role: 'ai', text: '⚠ ' + err, err: true, at: Date.now() } : { role: 'ai', text, src, at: Date.now() });
   chatSave(); chatRedraw();
+  // asked by voice → answered by voice
+  if (o.voice && !err && S.set.voiceReply !== false) { TTS.say(text, { owner: Chat.msgs.length - 1 }); chatRedraw(); }
 }

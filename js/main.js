@@ -203,7 +203,7 @@ async function boot() {
   const share = new URLSearchParams(location.search).get('share');
   const hideSplash = () => { const sp = $('#splash'); sp.classList.add('hide'); setTimeout(() => sp.remove(), 400); };
   if (share) { hideSplash(); return renderSharePage(share); }
-  try { await DB.open(); S.items = (await DB.all('items')) || []; }
+  try { await DB.open(); S.items = (await DB.all('items')) || []; S.items.forEach(i => { try { normalizeItem(i); } catch (e) { } }); }
   catch (e) { toast(t('Хранилище браузера недоступно (режим инкогнито?)'), 6000); S.items = []; }
   S.items.forEach(computeReminders);
   render();

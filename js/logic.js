@@ -74,7 +74,9 @@ function onSubDone(it, s) {
   return msgs;
 }
 function normalizeItem(it) {
-  if (!isTaskKind(it)) return;
+  if (!it || !isTaskKind(it)) return;
+  if (!PRIO[it.priority]) it.priority = 'normal';   // unknown value (old backup) must not break screens
+  if (typeof it.title !== 'string') it.title = String(it.title == null ? '' : it.title);
   it.subtasks = (it.subtasks || []).map(s => Object.assign({ id: uid(), text: '', done: false, due: null, time: null, after: null, afterDays: null }, s));
   if (it.status === 'todo' && it.subtasks.some(s => s.done) && it.subtasks.some(s => !s.done)) it.status = 'progress';
   if (!Array.isArray(it.locations)) it.locations = [];
@@ -326,11 +328,12 @@ async function toggleDone(id) {
   const open = (it.subtasks || []).filter(s => !s.done);
   if (open.length) {
     const v = await dialog({ title: t('Отметить задачу выполненной?'), text: t('Не выполнено подзадач: {n} из {m}.', { n: open.length, m: it.subtasks.length }), buttons: [{ l: t('Да, всё выполнено'), v: 'all', p: 1 }, { l: t('Открыть задачу'), v: 'open' }, { l: t('Отмена'), v: null }] });
-    if (v === 'open') return openItem(id);
+    if (v === 'open') { const s0 = topSheet && topSheet(); if (!(s0 && s0.w.querySelector('#td'))) openItem(id); return; }
     if (v !== 'all') return;
     open.forEach(s => { s.done = true; s.doneAt = new Date().toISOString(); });
   }
   if (await setStatus(it, 'done')) toast(t('Готово ✓'));
+  else open.forEach(s => { s.done = false; s.doneAt = null; });   // «Отмена» — the steps are as they were
 }
 
 /* ---------- smart rescheduling ---------- */

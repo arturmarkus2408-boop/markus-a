@@ -1259,3 +1259,202 @@ Object.assign(window.I18N_DICT.de, {"Автозапись на этом теле
   const L = ['en', 'uz', 'tr', 'de'];
   for (const k in T) L.forEach((l, i) => { window.I18N_DICT[l] = window.I18N_DICT[l] || {}; window.I18N_DICT[l][k] = T[k][i]; });
 })();
+/* v4.0 — voice answers, dialogs, sign-out */
+(function () {
+  const T = {
+"Удалить {k}?": [
+"Delete {k}?",
+"{k} o‘chirilsinmi?",
+"{k} silinsin mi?",
+"{k} löschen?"
+],
+"Слушаю… говорите": [
+"Listening… speak",
+"Tinglayapman… gapiring",
+"Dinliyorum… konuşun",
+"Ich höre… sprechen Sie"
+],
+"Говорите — вопрос отправится сам, ответ прозвучит голосом": [
+"Speak — the question is sent by itself, the answer will be read aloud",
+"Gapiring — savol o‘zi yuboriladi, javob ovozda eshitiladi",
+"Konuşun — soru kendiliğinden gider, cevap sesli okunur",
+"Sprechen Sie — die Frage wird automatisch gesendet, die Antwort vorgelesen"
+],
+"Голос ответов": [
+"Answer voice",
+"Javoblar ovozi",
+"Yanıt sesi",
+"Antwortstimme"
+],
+"Здравствуйте! Я MARKUS-A. Так звучит мой голос.": [
+"Hello! I'm MARKUS-A. This is how my voice sounds.",
+"Assalomu alaykum! Men MARKUS-A. Mening ovozim shunday.",
+"Merhaba! Ben MARKUS-A. Sesim böyle.",
+"Hallo! Ich bin MARKUS-A. So klingt meine Stimme."
+],
+"Послушать": [
+"Listen",
+"Tinglash",
+"Dinle",
+"Anhören"
+],
+"Голоса Gemini звучат как живой человек и работают через ваш ключ Gemini (бесплатно, с дневным лимитом). Если лимит закончится или нет интернета — читает голос телефона.": [
+"Gemini voices sound like a real person and use your Gemini key (free, with a daily limit). If the limit runs out or there's no internet, the phone's voice reads instead.",
+"Gemini ovozlari tirik odamdek eshitiladi va Gemini kalitingiz orqali ishlaydi (bepul, kunlik limit bilan). Limit tugasa yoki internet bo‘lmasa — telefon ovozi o‘qiydi.",
+"Gemini sesleri gerçek bir insan gibi konuşur ve Gemini anahtarınızla çalışır (ücretsiz, günlük limitli). Limit biterse veya internet yoksa telefonun sesi okur.",
+"Gemini-Stimmen klingen wie ein echter Mensch und nutzen Ihren Gemini-Schlüssel (kostenlos, mit Tageslimit). Ist das Limit erreicht oder kein Internet da, liest die Handystimme."
+],
+"Сохраняю в облако…": [
+"Saving to the cloud…",
+"Bulutga saqlanmoqda…",
+"Buluta kaydediliyor…",
+"Speichere in der Cloud…"
+],
+"Выйти из аккаунта?": [
+"Sign out?",
+"Akkauntdan chiqilsinmi?",
+"Hesaptan çıkılsın mı?",
+"Abmelden?"
+],
+"{n} записей ещё не отправлены в облако (нет интернета?). Если выйти и очистить устройство, они пропадут.": [
+"{n} records are not in the cloud yet (no internet?). If you sign out and clear the device, they will be lost.",
+"{n} ta yozuv hali bulutga yuborilmagan (internet yo‘qmi?). Chiqib, qurilmani tozalasangiz, ular yo‘qoladi.",
+"{n} kayıt henüz buluta gönderilmedi (internet yok mu?). Çıkıp cihazı temizlerseniz kaybolur.",
+"{n} Einträge sind noch nicht in der Cloud (kein Internet?). Beim Abmelden mit Löschen gehen sie verloren."
+],
+"Всё сохранено в облаке. С этого устройства данные будут убраны — после входа они вернутся.": [
+"Everything is saved in the cloud. Data will be removed from this device — it comes back when you sign in.",
+"Hammasi bulutda saqlangan. Ma’lumotlar bu qurilmadan olib tashlanadi — kirganingizda qaytadi.",
+"Her şey bulutta kayıtlı. Veriler bu cihazdan kaldırılacak — giriş yapınca geri gelir.",
+"Alles ist in der Cloud gespeichert. Die Daten werden von diesem Gerät entfernt — nach der Anmeldung kommen sie zurück."
+],
+"Выйти, но оставить данные на устройстве": [
+"Sign out but keep data on the device",
+"Chiqish, lekin ma’lumotlarni qurilmada qoldirish",
+"Çık ama verileri cihazda tut",
+"Abmelden, aber Daten auf dem Gerät lassen"
+],
+"Вы вышли из аккаунта": [
+"You signed out",
+"Akkauntdan chiqdingiz",
+"Hesaptan çıktınız",
+"Sie sind abgemeldet"
+],
+"Лимит голоса Gemini на сегодня исчерпан": [
+"Today's Gemini voice limit is used up",
+"Bugungi Gemini ovoz limiti tugadi",
+"Bugünkü Gemini ses limiti doldu",
+"Das heutige Gemini-Stimmlimit ist aufgebraucht"
+],
+"Голос Gemini сейчас недоступен": [
+"The Gemini voice is unavailable now",
+"Gemini ovozi hozir mavjud emas",
+"Gemini sesi şu an kullanılamıyor",
+"Die Gemini-Stimme ist gerade nicht verfügbar"
+],
+"читаю голосом телефона": [
+"reading with the phone's voice",
+"telefon ovozi bilan o‘qiyman",
+"telefonun sesiyle okuyorum",
+"lese mit der Handystimme"
+],
+"Отвечаю голосом…": [
+"Answering by voice…",
+"Ovozda javob beryapman…",
+"Sesli yanıtlıyorum…",
+"Antworte per Stimme…"
+],
+"Читаю вслух…": [
+"Reading aloud…",
+"Ovoz chiqarib o‘qiyapman…",
+"Sesli okuyorum…",
+"Lese vor…"
+],
+"Подзадача уже удалена": [
+"The subtask was already deleted",
+"Kichik vazifa allaqachon o‘chirilgan",
+"Alt görev zaten silinmiş",
+"Die Teilaufgabe wurde bereits gelöscht"
+],
+"Название слишком длинное — полный текст перенесён в описание": [
+"The title is too long — the full text was moved to the description",
+"Nom juda uzun — to‘liq matn tavsifga o‘tkazildi",
+"Başlık çok uzun — tam metin açıklamaya taşındı",
+"Der Titel ist zu lang — der volle Text steht jetzt in der Beschreibung"
+],
+"Мужской — спокойный (как в Gemini)": [
+"Male — calm (like in Gemini)",
+"Erkak — xotirjam (Gemini’dagi kabi)",
+"Erkek — sakin (Gemini’deki gibi)",
+"Männlich — ruhig (wie in Gemini)"
+],
+"Мужской — уверенный": [
+"Male — confident",
+"Erkak — ishonchli",
+"Erkek — kendinden emin",
+"Männlich — bestimmt"
+],
+"Мужской — бодрый": [
+"Male — upbeat",
+"Erkak — tetik",
+"Erkek — enerjik",
+"Männlich — munter"
+],
+"Женский — спокойный": [
+"Female — calm",
+"Ayol — xotirjam",
+"Kadın — sakin",
+"Weiblich — ruhig"
+],
+"Женский — лёгкий": [
+"Female — light",
+"Ayol — yengil",
+"Kadın — hafif",
+"Weiblich — leicht"
+],
+"Голос телефона (без интернета)": [
+"Phone voice (no internet)",
+"Telefon ovozi (internetsiz)",
+"Telefon sesi (internetsiz)",
+"Handystimme (ohne Internet)"
+],
+"Прослушать": [
+"Listen",
+"Tinglash",
+"Dinle",
+"Anhören"
+],
+"Стоп": [
+"Stop",
+"To‘xtatish",
+"Durdur",
+"Stopp"
+],
+"Пауза": [
+"Pause",
+"Pauza",
+"Duraklat",
+"Pause"
+],
+"Спросить голосом": [
+"Ask by voice",
+"Ovoz bilan so‘rash",
+"Sesle sor",
+"Per Stimme fragen"
+],
+"Распознаю…": [
+"Recognising…",
+"Aniqlanmoqda…",
+"Tanınıyor…",
+"Erkenne…"
+],
+"Закрыть": [
+"Close",
+"Yopish",
+"Kapat",
+"Schließen"
+]
+};
+  const L = ['en', 'uz', 'tr', 'de'];
+  for (const k in T) L.forEach((l, i) => { window.I18N_DICT[l] = window.I18N_DICT[l] || {}; window.I18N_DICT[l][k] = T[k][i]; });
+})();
