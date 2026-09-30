@@ -58,15 +58,23 @@ function pdfPlace(p) {
   ].filter(Boolean), margin: [0, 2, 0, 8] };
 }
 function contactRows(c) {
-  const tg = c.telegram ? contactLinks(c).find(l => l.i === 'tg') : null;
+  const tg = c.telegram ? tgLink(c.telegram) : '';
+  const ph = contactPhones(c);
   return [
-    c.company ? [t('Компания / должность'), c.company] : null,
-    c.phone ? [t('Телефон'), { text: c.phone, link: 'tel:' + digits(c.phone) }] : null,
-    c.whatsapp || c.phone ? ['WhatsApp', { text: c.whatsapp || c.phone, link: 'https://wa.me/' + digits(c.whatsapp || c.phone).replace('+', '') }] : null,
-    c.telegram ? ['Telegram', { text: c.telegram, link: tg ? tg.u : undefined }] : null,
+    ...ph.map((x, i) => [t('Телефон') + (ph.length > 1 ? ' ' + (i + 1) : ''), { text: x, link: 'tel:' + digits(x) }]),
+    c.whatsapp ? ['WhatsApp', { text: c.whatsapp, link: 'https://wa.me/' + digits(c.whatsapp).replace('+', '') }] : null,
+    c.telegram ? ['Telegram', { text: c.telegram, link: tg }] : null,
+    c.instagram ? ['Instagram', { text: c.instagram, link: 'https://instagram.com/' + igUser(c.instagram) }] : null,
     c.email ? ['Email', { text: c.email, link: 'mailto:' + c.email }] : null,
+    c.company ? [t('Место работы'), c.company] : null,
+    c.position ? [t('Должность'), c.position] : null,
+    ...(c.addresses || []).map((p, i) => [p.name || t('Адрес {n}', { n: i + 1 }), [p.address || placeTitle(p), placeGeo(p) ? ' (' + placeGeo(p).lat.toFixed(6) + ', ' + placeGeo(p).lng.toFixed(6) + ')' : ''].join('')]),
+    c.birthday ? [t('Дата рождения'), bdayLabel(c).replace(/ · 🎂.*$/, '')] : null,
+    c.marital ? [t('Семейное положение'), t(MARITAL[c.marital] || c.marital)] : null,
+    c.children ? [t('Дети'), c.children] : null,
+    c.carModel || c.carPlate ? [t('Автомобиль'), [c.carModel, c.carPlate].filter(Boolean).join(' · ')] : null,
     c.source ? [t('Откуда клиент'), c.source] : null,
-    c.desc ? [t('Заметки'), c.desc] : null
+    c.desc ? [t('Примечание'), c.desc] : null
   ].filter(Boolean);
 }
 function pdfContactCard(c, big) {
@@ -142,9 +150,9 @@ async function contactPdf(id) {
 /* ---------- 🔊 read a contact aloud ---------- */
 function contactSpeech(c) {
   const L = [c.title + '.'];
-  if (c.company) L.push(c.company + '.');
-  if (c.source) L.push(t('Откуда клиент') + ': ' + c.source + '.');
-  if (c.phone) L.push(t('Телефон') + ': ' + String(c.phone).replace(/(\d)/g, '$1 ').trim() + '.');
+  const job = [c.position, c.company].filter(Boolean).join(', '); if (job) L.push(job + '.');
+  if (c.birthday) L.push(t('Дата рождения') + ': ' + D.long(c.birthday).replace(/^[^,]+,\s*/, '') + '.');
+  const ph = contactPhones(c); if (ph[0]) L.push(t('Телефон') + ': ' + String(ph[0]).replace(/(\d)/g, '$1 ').trim() + '.');
   if (c.telegram) L.push('Telegram: ' + tgUser(c.telegram) + '.');
   if (c.desc) L.push(c.desc);
   const m = contactMeetings(c.id)[0];
@@ -175,10 +183,11 @@ async function contactCommand(id) {
   if (!v) return;
   const low = v.toLowerCase();
   if (/^(позвони|набери|звони|позвонить|набрать|call|qo['ʻ’]?ng['ʻ’]?iroq)/i.test(low.trim())) {
-    if (!c.phone) return toast(t('У контакта нет телефона — добавьте его в карточке'), 4000);
-    return window.open('tel:' + digits(c.phone), '_self');
+    const ph = contactPhones(c)[0];
+    if (!ph) return toast(t('У контакта нет телефона — добавьте его в карточке'), 4000);
+    return window.open('tel:' + digits(ph), '_self');
   }
-  const ch = /телеграм|telegram|телеге|тг\b|в тг/.test(low) ? 'tg' : /ватсап|вотсап|вацап|whatsapp|вотс/.test(low) ? 'wa' : /почт|e-?mail|имейл|емейл|письм/.test(low) ? 'mail' : (c.telegram ? 'tg' : c.phone || c.whatsapp ? 'wa' : c.email ? 'mail' : '');
+  const ch = /телеграм|telegram|телеге|тг\b|в тг/.test(low) ? 'tg' : /ватсап|вотсап|вацап|whatsapp|вотс/.test(low) ? 'wa' : /почт|e-?mail|имейл|емейл|письм/.test(low) ? 'mail' : (c.telegram ? 'tg' : contactPhones(c).length || c.whatsapp ? 'wa' : c.email ? 'mail' : '');
   if (!ch) return toast(t('У контакта нет ни Telegram, ни телефона, ни почты'), 4000);
   let text = v.replace(/^(напиши|отправь|написать|отправить|скажи|передай|сообщи)\s*(ему|ей|им)?\s*(в|на|по)?\s*(телеграм\w*|telegram|тг|ватсап\w*|вотсап\w*|whatsapp|почту|e-?mail|письмо)?\s*[,:]?\s*(что|чтобы)?\s*/i, '').trim() || v;
   let subject = '';
@@ -199,7 +208,7 @@ async function contactCommand(id) {
   });
   if (!go2 || !go2.m) return;
   try { await navigator.clipboard.writeText(go2.m); } catch (e) { }
-  if (ch === 'wa') window.open('https://wa.me/' + digits(c.whatsapp || c.phone).replace('+', '') + '?text=' + encodeURIComponent(go2.m), '_blank');
+  if (ch === 'wa') window.open('https://wa.me/' + digits(c.whatsapp || contactPhones(c)[0]).replace('+', '') + '?text=' + encodeURIComponent(go2.m), '_blank');
   else if (ch === 'mail') window.open('mailto:' + encodeURIComponent(c.email) + '?subject=' + encodeURIComponent(go2.s) + '&body=' + encodeURIComponent(go2.m), '_self');
   else {
     const u = tgLink(c.telegram);

@@ -7,17 +7,27 @@ function stopDictation() { if (dict) { try { dict.rec.stop(); } catch (e) { } if
 function dictateInto(id, btn, multiline) {
   if (dict) { const same = dict.btn === btn; stopDictation(); if (same) return; }
   if (!SR) return toast(t('Голосовой ввод работает в Chrome / Edge / Safari'));
-  const el = document.getElementById(id); if (!el) return;
+  const el0 = document.getElementById(id); if (!el0) return;
   const rec = new SR(); rec.lang = srLang(); rec.continuous = true; rec.interimResults = false;
   dict = { rec, btn }; btn.classList.add('on');
+  toast(t('Говорите… Нажмите на микрофон ещё раз, чтобы остановить'), 2500);
   rec.onresult = e => {
+    // the screen may have been redrawn meanwhile — always write into the field that is on screen now
+    const el = document.getElementById(id) || el0;
     for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) {
       const tx = e.results[i][0].transcript.trim(); if (!tx) continue;
       const v = el.value;
-      el.value = v + (v && !/\s$/.test(v) ? (multiline ? ' ' : ' ') : '') + (v ? tx : tx[0].toUpperCase() + tx.slice(1));
+      el.value = v + (v && !/\s$/.test(v) ? ' ' : '') + (v ? tx : tx[0].toUpperCase() + tx.slice(1));
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      if (dict) dict.got = true;
     }
   };
-  rec.onerror = e => { if (e.error === 'not-allowed') toast(t('Разрешите доступ к микрофону')); stopDictation(); };
+  rec.onerror = e => {
+    const m = { 'not-allowed': 'Разрешите доступ к микрофону', 'service-not-allowed': 'Разрешите доступ к микрофону', 'no-speech': 'Не расслышал — нажмите на микрофон и говорите', network: 'Для распознавания речи нужен интернет', 'not-supported': 'На телефоне не работает распознавание речи. Включите приложение «Google» (Настройки → Приложения → Google → Включить) и повторите.' }[e.error];
+    if (m) toast(t(m), 5000);
+    else if (!(dict && dict.got)) toast(t('Распознавание речи не запустилось — нажмите на микрофон ещё раз. Если не помогает: Настройки телефона → «Голосовой ввод Google» должен быть включён.'), 6000);
+    stopDictation();
+  };
   rec.onend = () => { if (dict && dict.rec === rec) { try { rec.start(); } catch (e) { stopDictation(); } } };
   try { rec.start(); } catch (e) { stopDictation(); }
 }

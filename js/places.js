@@ -73,6 +73,7 @@ function placeShareText(p, it) {
 function holderOf(id) { return getItem(id) || (typeof E !== 'undefined' && E && E.id === id ? E : null); }
 function allFileMetas(it) {
   const out = (it.files || []).slice();
+  (it.addresses || []).forEach(l => (l.photos || []).forEach(f => out.push(f)));   // photos of a contact's addresses
   (it.locations || []).forEach(l => (l.photos || []).forEach(f => out.push(f)));
   if (it.result && it.result.files) it.result.files.forEach(f => out.push(f));
   return out;
@@ -148,12 +149,12 @@ async function edEditPlace(pid) {
 function edRemovePlace(pid) { E.locations = (E.locations || []).filter(x => x.id !== pid); edRenderPlaces(); }
 
 let PE = null;   // place being edited
-function openPlaceEditor(place) {
+function openPlaceEditor(place, title) {
   PE = place;
   return new Promise(res => {
     let saved = false;
     const sh = openSheet(`
-      <div class="sh-h"><b>${t('Место встречи')}</b><button class="xbtn" onclick="closeSheet()">${ic('x', 18)}</button></div>
+      <div class="sh-h"><b>${esc(title || t('Место встречи'))}</b><button class="xbtn" onclick="closeSheet()">${ic('x', 18)}</button></div>
       <label class="lbl">${t('Название')}</label><input class="inp" id="pl_name" value="${esc(PE.name)}" placeholder="${esc(t('Например: кафе «Caravan», вход со стороны парка'))}">
       <label class="lbl">${t('Ссылка на место')} <span class="muted">(${t('Яндекс Карты, 2ГИС, Google Maps')})</span></label>
       <div class="inp-mic"><input class="inp" id="pl_url" value="${esc(PE.url)}" placeholder="https://…" oninput="plGeoHint()"><button class="mic-sm" onclick="plPaste()" title="${esc(t('Вставить'))}">${ic('clip')}</button></div>

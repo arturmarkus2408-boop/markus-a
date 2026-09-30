@@ -952,3 +952,310 @@ Object.assign(window.I18N_DICT.de, {"Автозапись на этом теле
   const L = ['en', 'uz', 'tr', 'de'];
   for (const k in T) L.forEach((l, i) => { window.I18N_DICT[l] = window.I18N_DICT[l] || {}; window.I18N_DICT[l][k] = T[k][i]; });
 })();
+/* v3.9 — full contact card, choosing documents, dictation messages */
+(function () {
+  const T = {
+"сегодня!": [
+"today!",
+"bugun!",
+"bugün!",
+"heute!"
+],
+"завтра": [
+"tomorrow",
+"ertaga",
+"yarın",
+"morgen"
+],
+"через {n} дн.": [
+"in {n} days",
+"{n} kundan keyin",
+"{n} gün sonra",
+"in {n} Tagen"
+],
+"День рождения": [
+"Birthday",
+"Tug‘ilgan kun",
+"Doğum günü",
+"Geburtstag"
+],
+"Адрес {n}": [
+"Address {n}",
+"Manzil {n}",
+"Adres {n}",
+"Adresse {n}"
+],
+"Место работы": [
+"Workplace",
+"Ish joyi",
+"İş yeri",
+"Arbeitsplatz"
+],
+"Должность": [
+"Position",
+"Lavozim",
+"Pozisyon",
+"Position"
+],
+"Дата рождения": [
+"Date of birth",
+"Tug‘ilgan sana",
+"Doğum tarihi",
+"Geburtsdatum"
+],
+"Семейное положение": [
+"Marital status",
+"Oilaviy holat",
+"Medeni durum",
+"Familienstand"
+],
+"Дети": [
+"Children",
+"Farzandlar",
+"Çocuklar",
+"Kinder"
+],
+"Автомобиль": [
+"Car",
+"Avtomobil",
+"Araba",
+"Auto"
+],
+"Как познакомились": [
+"How you met",
+"Qanday tanishgansiz",
+"Nasıl tanıştınız",
+"Wie Sie sich kennen"
+],
+"Адреса": [
+"Addresses",
+"Manzillar",
+"Adresler",
+"Adressen"
+],
+"Файлы, фото, документы": [
+"Files, photos, documents",
+"Fayllar, suratlar, hujjatlar",
+"Dosyalar, fotoğraflar, belgeler",
+"Dateien, Fotos, Dokumente"
+],
+"улица, дом или точка на карте": [
+"street, house or a point on the map",
+"ko‘cha, uy yoki xaritadagi nuqta",
+"sokak, bina veya haritada bir nokta",
+"Straße, Haus oder Punkt auf der Karte"
+],
+"Дом": [
+"Home",
+"Uy",
+"Ev",
+"Zuhause"
+],
+"Работа": [
+"Work",
+"Ish",
+"İş",
+"Arbeit"
+],
+"Личное": [
+"Personal",
+"Shaxsiy",
+"Kişisel",
+"Persönlich"
+],
+"Примечание": [
+"Note",
+"Izoh",
+"Not",
+"Notiz"
+],
+"Телефоны": [
+"Phones",
+"Telefonlar",
+"Telefonlar",
+"Telefone"
+],
+"Мессенджеры и почта": [
+"Messengers and e-mail",
+"Messenjerlar va pochta",
+"Mesajlaşma ve e-posta",
+"Messenger und E-Mail"
+],
+"или номер": [
+"or number",
+"yoki raqam",
+"veya numara",
+"oder Nummer"
+],
+"если не телефон 1": [
+"if not phone 1",
+"agar 1-telefon bo‘lmasa",
+"telefon 1 değilse",
+"falls nicht Telefon 1"
+],
+"В день рождения утром придёт напоминание — каждый год.": [
+"On the birthday you'll get a reminder in the morning — every year.",
+"Tug‘ilgan kuni ertalab eslatma keladi — har yili.",
+"Doğum günü sabahı hatırlatma gelir — her yıl.",
+"Am Geburtstag kommt morgens eine Erinnerung — jedes Jahr."
+],
+"Например: Али (2015), Мадина (2018)": [
+"E.g.: Ali (2015), Madina (2018)",
+"Masalan: Ali (2015), Madina (2018)",
+"Örn.: Ali (2015), Madina (2018)",
+"Z. B.: Ali (2015), Madina (2018)"
+],
+"Автомобиль: марка": [
+"Car: make",
+"Avtomobil: markasi",
+"Araba: marka",
+"Auto: Marke"
+],
+"Гос. номер": [
+"Plate number",
+"Davlat raqami",
+"Plaka",
+"Kennzeichen"
+],
+"Что угодно: характер, увлечения, хобби, как познакомились…": [
+"Anything: character, interests, hobbies, how you met…",
+"Istalgan narsa: fe’l-atvor, qiziqishlar, xobbi, qanday tanishgansiz…",
+"Her şey: karakter, ilgi alanları, hobiler, nasıl tanıştınız…",
+"Alles: Charakter, Interessen, Hobbys, wie Sie sich kennen…"
+],
+"Выбраны повторы: {n}. Самые новые копии остаются.": [
+"Duplicates selected: {n}. The newest copies stay.",
+"Takrorlar tanlandi: {n}. Eng yangi nusxalar qoladi.",
+"Tekrarlar seçildi: {n}. En yeni kopyalar kalır.",
+"Duplikate ausgewählt: {n}. Die neuesten Kopien bleiben."
+],
+"Повторов нет": [
+"No duplicates",
+"Takrorlar yo‘q",
+"Tekrar yok",
+"Keine Duplikate"
+],
+"Ничего не выбрано": [
+"Nothing selected",
+"Hech narsa tanlanmagan",
+"Hiçbir şey seçilmedi",
+"Nichts ausgewählt"
+],
+"Удалить файлы: {n}?": [
+"Delete files: {n}?",
+"Fayllarni o‘chirish: {n}?",
+"Dosyalar silinsin mi: {n}?",
+"Dateien löschen: {n}?"
+],
+"Файлы удалятся с телефона и из облака. Отменить будет нельзя.": [
+"The files will be deleted from the phone and the cloud. This cannot be undone.",
+"Fayllar telefondan va bulutdan o‘chiriladi. Bekor qilib bo‘lmaydi.",
+"Dosyalar telefondan ve buluttan silinecek. Geri alınamaz.",
+"Die Dateien werden vom Handy und aus der Cloud gelöscht. Nicht rückgängig zu machen."
+],
+"Удалено файлов: {n}": [
+"Files deleted: {n}",
+"O‘chirilgan fayllar: {n}",
+"Silinen dosyalar: {n}",
+"Gelöschte Dateien: {n}"
+],
+"Выбрать все": [
+"Select all",
+"Hammasini tanlash",
+"Tümünü seç",
+"Alle auswählen"
+],
+"Выбрать повторы": [
+"Select duplicates",
+"Takrorlarni tanlash",
+"Tekrarları seç",
+"Duplikate auswählen"
+],
+"Выбрано: {n}": [
+"Selected: {n}",
+"Tanlandi: {n}",
+"Seçildi: {n}",
+"Ausgewählt: {n}"
+],
+"Удалить выбранные ({n})": [
+"Delete selected ({n})",
+"Tanlanganlarni o‘chirish ({n})",
+"Seçilenleri sil ({n})",
+"Ausgewählte löschen ({n})"
+],
+"Говорите… Нажмите на микрофон ещё раз, чтобы остановить": [
+"Speak… Tap the microphone again to stop",
+"Gapiring… To‘xtatish uchun mikrofonni yana bosing",
+"Konuşun… Durdurmak için mikrofona tekrar dokunun",
+"Sprechen Sie… Zum Beenden erneut auf das Mikrofon tippen"
+],
+"Распознавание речи не запустилось — нажмите на микрофон ещё раз. Если не помогает: Настройки телефона → «Голосовой ввод Google» должен быть включён.": [
+"Speech recognition didn't start — tap the microphone again. If it doesn't help: phone Settings → «Google voice typing» must be on.",
+"Nutqni aniqlash ishga tushmadi — mikrofonni yana bosing. Yordam bermasa: telefon Sozlamalari → «Google ovozli yozuv» yoqilgan bo‘lishi kerak.",
+"Konuşma tanıma başlamadı — mikrofona tekrar dokunun. İşe yaramazsa: telefon Ayarları → «Google sesle yazma» açık olmalı.",
+"Spracherkennung startete nicht — erneut aufs Mikrofon tippen. Hilft es nicht: Handy-Einstellungen → «Google Spracheingabe» muss an sein."
+],
+"Не расслышал — нажмите на микрофон и говорите": [
+"Didn't catch that — tap the microphone and speak",
+"Eshitmadim — mikrofonni bosing va gapiring",
+"Duyamadım — mikrofona dokunup konuşun",
+"Nicht verstanden — aufs Mikrofon tippen und sprechen"
+],
+"Для распознавания речи нужен интернет": [
+"Speech recognition needs the internet",
+"Nutqni aniqlash uchun internet kerak",
+"Konuşma tanıma için internet gerekir",
+"Spracherkennung braucht Internet"
+],
+"На телефоне не работает распознавание речи. Включите приложение «Google» (Настройки → Приложения → Google → Включить) и повторите.": [
+"Speech recognition isn't working on the phone. Turn on the «Google» app (Settings → Apps → Google → Enable) and try again.",
+"Telefonda nutqni aniqlash ishlamayapti. «Google» ilovasini yoqing (Sozlamalar → Ilovalar → Google → Yoqish) va qayta urinib ko‘ring.",
+"Telefonda konuşma tanıma çalışmıyor. «Google» uygulamasını açın (Ayarlar → Uygulamalar → Google → Etkinleştir) ve tekrar deneyin.",
+"Spracherkennung funktioniert nicht. Aktivieren Sie die «Google»-App (Einstellungen → Apps → Google → Aktivieren) und versuchen Sie es erneut."
+],
+"Разрешите доступ к микрофону": [
+"Allow microphone access",
+"Mikrofonga ruxsat bering",
+"Mikrofon erişimine izin verin",
+"Mikrofonzugriff erlauben"
+],
+"Женат / замужем": [
+"Married",
+"Uylangan / turmushga chiqqan",
+"Evli",
+"Verheiratet"
+],
+"Холост / не замужем": [
+"Single",
+"Uylanmagan / turmushga chiqmagan",
+"Bekâr",
+"Ledig"
+],
+"Разведён(а)": [
+"Divorced",
+"Ajrashgan",
+"Boşanmış",
+"Geschieden"
+],
+"Вдовец / вдова": [
+"Widowed",
+"Beva",
+"Dul",
+"Verwitwet"
+],
+"В отношениях": [
+"In a relationship",
+"Munosabatda",
+"İlişkisi var",
+"In einer Beziehung"
+],
+"—": [
+"—",
+"—",
+"—",
+"—"
+]
+};
+  const L = ['en', 'uz', 'tr', 'de'];
+  for (const k in T) L.forEach((l, i) => { window.I18N_DICT[l] = window.I18N_DICT[l] || {}; window.I18N_DICT[l][k] = T[k][i]; });
+})();

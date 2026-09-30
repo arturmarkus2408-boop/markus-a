@@ -255,7 +255,7 @@ SCREENS.meeting = () => {
   if (recBlocked === m.id && !recOn && !m.recording) b += `<div class="banner" style="color:var(--red)" onclick="recBlocked=null;Rec.start('${m.id}')">${ic('mic')}<div><b>${t('Автозапись не запустилась')}</b><span>${t('Браузер не дал доступ к микрофону. Нажмите здесь, чтобы начать, и выберите «Разрешить всегда».')}</span></div></div>`;
   if ((m.locations || []).length) b += `<div class="card"><div class="h4" style="margin-top:0">${t('Локации')} (${m.locations.length})</div>${placesBlock(m)}</div>`;
   b += `<div class="card"><div class="h4" style="margin-top:0;display:flex">${t('Участники')} (${cs.length + extra.length + 1})<span style="flex:1"></span><button class="link" onclick="meetAddPerson('${m.id}')">+ ${t('Добавить')}</button></div>
-    ${cs.length ? '' : `<div class="hint" style="margin-top:0">${t('«+ Добавить» → «Новый контакт»: ФИО, телефон, Telegram, WhatsApp, почта, фото, откуда клиент. Всё сохранится и в «Контактах».')}</div>`}
+
     ${cs.map(x => `<div class="person" onclick="openContact('${x.id}')" style="cursor:pointer">${avatarHtml(x)}<div style="flex:1;min-width:0"><b style="font-size:14px">${esc(x.title)}</b><div class="muted" style="font-size:12px">${esc([x.company, x.phone].filter(Boolean).join(' · '))}</div></div>${contactLinks(x).filter(l => l.i !== 'mail').map(l => `<a class="xbtn" href="${esc(l.u)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" aria-label="${esc(l.l)}">${ic(l.i, 16)}</a>`).join('')}</div>`).join('')}
     ${extra.map(n => `<div class="person"><span class="pav" style="background:#94a3b8">${esc(n.trim()[0] || '?').toUpperCase()}</span><div><b style="font-size:14px">${esc(n)}</b><div class="muted" style="font-size:12px">${t('нет в контактах')}</div></div></div>`).join('')}
     <div class="person"><span class="pav" style="background:#94a3b8">${esc((S.set.name || 'Я')[0].toUpperCase())}</span><div><b style="font-size:14px">${t('Вы')}</b><div class="muted" style="font-size:12px">${t('Организатор')}</div></div></div>
@@ -391,10 +391,11 @@ async function loadAudio(id) { const b = await recBlob(id); const box = $(`[data
 /* ================= CONTACTS ================= */
 function contactsListHTML() {
   const q = (S.contactQ || '').toLowerCase();
-  const cs = live().filter(c => c.kind === 'contact' && (!q || (c.title + ' ' + (c.company || '') + ' ' + (c.phone || '') + ' ' + (c.telegram || '')).toLowerCase().includes(q))).sort((a, b) => a.title.localeCompare(b.title));
+  const hay = c => [c.title, c.company, c.position, c.phone, c.phone2, c.phone3, c.telegram, c.instagram, c.email, c.carPlate, c.carModel, c.desc, ...(c.addresses || []).map(p => p.address || '')].join(' ').toLowerCase();
+  const cs = live().filter(c => c.kind === 'contact' && (!q || hay(c).includes(q) || digits(hay(c)).includes(digits(q)) && digits(q).length > 3)).sort((a, b) => a.title.localeCompare(b.title));
   if (!cs.length) return emptyBox('👤', q ? t('Ничего не найдено') : t('Контактов пока нет. Добавьте партнёров — их можно выбирать во встречах.'));
   // v3.8: call / Telegram / WhatsApp / e-mail straight from the list — one tap
-  return `<div class="list">${cs.map(c => `<div class="ncard" data-open="${c.id}">${avatarHtml(c, 40)}<div class="nmain"><b>${esc(c.title)}</b><span>${esc([c.company, c.source, c.phone].filter(Boolean).join(' · '))}</span></div><div class="c-mini">${contactLinks(c).filter(l => l.i === 'phone' || l.i === (c.telegram ? 'tg' : 'wa')).map(l => `<a class="xbtn" href="${esc(l.u)}" target="${l.i === 'phone' || l.i === 'mail' ? '_self' : '_blank'}" rel="noopener" onclick="event.stopPropagation()" aria-label="${esc(l.l)}">${ic(l.i, 16)}</a>`).join('')}</div></div>`).join('')}</div>`;
+  return `<div class="list">${cs.map(c => `<div class="ncard" data-open="${c.id}">${avatarHtml(c, 40)}<div class="nmain"><b>${esc(c.title)}</b><span>${esc([[c.position, c.company].filter(Boolean).join(', '), contactPhones(c)[0]].filter(Boolean).join(' · '))}${c.birthday && D.diffDays(D.today(), nextBirthday(c.birthday)) <= 14 ? ' · 🎂 ' + esc(D.human(nextBirthday(c.birthday))) : ''}</span></div><div class="c-mini">${contactLinks(c).filter(l => l.i === 'phone' || l.i === (c.telegram ? 'tg' : 'wa')).map(l => `<a class="xbtn" href="${esc(l.u)}" target="${l.i === 'phone' || l.i === 'mail' ? '_self' : '_blank'}" rel="noopener" onclick="event.stopPropagation()" aria-label="${esc(l.l)}">${ic(l.i, 16)}</a>`).join('')}</div></div>`).join('')}</div>`;
 }
 SCREENS.contacts = () => {
   const b = `<div class="search">${ic('search', 18)}<input placeholder="${esc(t('Поиск контактов…'))}" value="${esc(S.contactQ)}" oninput="S.contactQ=this.value;$('#cl').innerHTML=contactsListHTML()"></div><div id="cl">${contactsListHTML()}</div>`;
@@ -421,17 +422,58 @@ function allFiles() {
   });
   return out.sort((a, b) => (b.f.added || '').localeCompare(a.f.added || ''));
 }
-function docsListHTML() {
+/* v3.9: choose several documents (like in e-mail) — all, duplicates or by hand — and delete them at once */
+const fKey = (it, f) => it.id + '|' + (f.isRec ? 'rec' : f.id);
+function docsShown() {
   const q = (S.docQ || '').toLowerCase(), fl = S.docFilter;
-  const xs = allFiles().filter(({ f, it }) => (fl === 'all' || fileKind(f)[2] === fl) && (!q || (f.name + ' ' + it.title).toLowerCase().includes(q)));
+  return allFiles().filter(({ f, it }) => (fl === 'all' || fileKind(f)[2] === fl) && (!q || (f.name + ' ' + it.title).toLowerCase().includes(q)));
+}
+function docSelToggle(k) { const s = S.docSel; if (!s) return; if (s.has(k)) s.delete(k); else s.add(k); docsRedraw(); }
+function docSelAll() { const xs = docsShown().map(({ f, it }) => fKey(it, f)); const all = xs.every(k => S.docSel.has(k)); S.docSel = new Set(all ? [] : xs); docsRedraw(); }
+function docSelDupes() {
+  // the same file (same name and size) shown several times — keep the newest, select the rest
+  const seen = new Set(), pick = new Set();
+  docsShown().forEach(({ f, it }) => { const g = (f.name || '') + '|' + (f.size || 0); if (seen.has(g)) pick.add(fKey(it, f)); else seen.add(g); });
+  S.docSel = pick; docsRedraw();
+  toast(pick.size ? t('Выбраны повторы: {n}. Самые новые копии остаются.', { n: pick.size }) : t('Повторов нет'), 3500);
+}
+function docsRedraw() { const l = $('#dl'); if (l) l.innerHTML = docsListHTML(); const d = $('#dock'); if (d && S.route === 'docs') { const r = SCREENS.docs(); d.innerHTML = r.dock || ''; } }
+async function docDeleteSelected() {
+  const keys = Array.from(S.docSel || []); if (!keys.length) return toast(t('Ничего не выбрано'));
+  const v = await dialog({ title: t('Удалить файлы: {n}?', { n: keys.length }), text: esc(t('Файлы удалятся с телефона и из облака. Отменить будет нельзя.')), buttons: [{ l: t('Удалить'), v: true, d: 1 }, { l: t('Отмена'), v: false }] });
+  if (v !== true) return;
+  const metas = [], touched = new Map();
+  for (const k of keys) {
+    const [hid, fid] = k.split('|'); const it = getItem(hid); if (!it) continue;
+    if (fid === 'rec') { if (it.recording) { metas.push({ id: it.recording.fileId, cloud: it.recording.cloud, parts: it.recording.parts }); it.recording = null; } }
+    else {
+      const drop = arr => { if (!Array.isArray(arr)) return; const i = arr.findIndex(x => x.id === fid); if (i >= 0) metas.push(arr.splice(i, 1)[0]); };
+      drop(it.files); (it.locations || []).forEach(p => drop(p.photos)); if (it.result) drop(it.result.files);
+    }
+    touched.set(hid, it);
+  }
+  for (const it of touched.values()) {
+    const loneDoc = it.kind === 'note' && it.noteCat === 'Документы' && !(it.files || []).length && !(it.desc || '').trim();
+    if (loneDoc) await deleteItem(it); else await saveItem(it, { render: false });
+  }
+  await purgeFiles(metas);
+  S.docSel = null; toast(t('Удалено файлов: {n}', { n: keys.length })); render();
+}
+function docsListHTML() {
+  const xs = docsShown(), sel = S.docSel;
   if (!xs.length) return emptyBox('📁', t('Документов нет. Прикрепляйте их к задачам и встречам или загрузите здесь'));
+  const bar = sel ? `<div class="selbar"><button class="chip ${xs.every(({ f, it }) => sel.has(fKey(it, f))) ? 'on' : ''}" onclick="docSelAll()">${ic('check', 13)} ${t('Выбрать все')} (${xs.length})</button><button class="chip" onclick="docSelDupes()">${t('Выбрать повторы')}</button><span class="muted" style="font-size:12.5px">${t('Выбрано: {n}', { n: sel.size })}</span></div>` : '';
+  if (sel) return bar + `<div class="list" style="padding:0 12px">${xs.map(({ f, it }) => { const k = fKey(it, f), on = sel.has(k); return `<div class="frow ${on ? 'sel' : ''}" onclick="docSelToggle('${k}')"><span class="fsel">${on ? ic('checkmark', 14) : ''}</span>${ficon(f)}<div class="fm"><b>${esc(f.name)}</b><span>${mb(f.size)} · ${esc(D.human((f.added || it.updated || '').slice(0, 10) || D.today()))} · ${esc(it.title.slice(0, 40))}</span></div></div>`; }).join('')}</div>`;
   return `<div class="list" style="padding:0 12px">${xs.map(({ f, it }) => `<div class="frow" onclick="openFile('${it.id}','${f.isRec ? 'rec' : f.id}')">${ficon(f)}<div class="fm"><b>${esc(f.name)}</b><span>${mb(f.size)} · ${esc(D.human((f.added || it.updated || '').slice(0, 10) || D.today()))} · ${esc(it.title.slice(0, 40))}</span></div>${f.fav ? `<span style="color:var(--ylw)">${ic('starf', 16)}</span>` : ''}<button class="row-menu del" onclick="event.stopPropagation();deleteFile('${it.id}','${f.isRec ? 'rec' : f.id}')" aria-label="${esc(t('Удалить'))}">${ic('trash', 17)}</button></div>`).join('')}</div>`;
 }
 SCREENS.docs = () => {
   const fl = [['all', 'Все'], ['pdf', 'PDF'], ['docx', 'DOCX'], ['xlsx', 'XLSX'], ['img', 'Изображения'], ['audio', 'Аудио'], ['other', 'Другое']];
   const b = `<div class="search">${ic('search', 18)}<input placeholder="${esc(t('Поиск документов…'))}" value="${esc(S.docQ)}" oninput="S.docQ=this.value;$('#dl').innerHTML=docsListHTML()"></div>
     <div class="chips">${fl.map(([k, l]) => `<button class="chip ${S.docFilter === k ? 'on' : ''}" onclick="S.docFilter='${k}';render()">${t(l)}</button>`).join('')}</div><div id="dl">${docsListHTML()}</div>`;
-  return { top: titleTop(t('Документы')), body: b, dock: `<div class="fab-wrap"><label class="fab" aria-label="${esc(t('Загрузить'))}">${ic('plus', 26)}<input type="file" multiple hidden onchange="uploadDocs(this)"></label></div>` };
+  const selBtn = `<button class="tbtn" style="width:auto;padding:0 12px;font-weight:700;font-size:14px;color:var(--acc);display:flex;align-items:center;gap:5px" onclick="S.docSel=S.docSel?null:new Set();render()">${S.docSel ? t('Готово') : ic('check') + ' ' + t('Выбрать')}</button>`;
+  const dock = S.docSel ? `<div class="seldock"><button class="btn ghost" onclick="S.docSel=null;render()">${t('Отмена')}</button><button class="btn danger" style="flex:1" ${S.docSel.size ? '' : 'disabled'} onclick="docDeleteSelected()">${ic('trash', 18)} ${t('Удалить выбранные ({n})', { n: S.docSel.size })}</button></div>`
+    : `<div class="fab-wrap"><label class="fab" aria-label="${esc(t('Загрузить'))}">${ic('plus', 26)}<input type="file" multiple hidden onchange="uploadDocs(this)"></label></div>`;
+  return { top: titleTop(t('Документы'), { extra: selBtn }), body: b, dock };
 };
 
 /* ================= FAVORITES ================= */
@@ -554,7 +596,7 @@ SCREENS.settings = () => {
     <div class="btns"><button class="btn ghost" onclick="freePhoneMemory()">${t('Освободить память телефона')}</button></div></div>`;
   b += sec(t('Данные')) + `<div class="set-card"><div class="hint" style="margin-top:12px">${t('Резервная копия задач, встреч, контактов и заметок (без файлов).')}</div><div class="btns"><button class="btn ghost" onclick="exportBackup()">${ic('download', 16)} ${t('Скачать копию')}</button><label class="btn ghost">${t('Загрузить копию')}<input type="file" accept=".json,application/json" hidden onchange="importBackup(this.files[0])"></label></div>
     ${window._installPrompt ? `<div class="btns"><button class="btn pri" onclick="installApp()">${t('Установить приложение')}</button></div>` : ''}</div>`;
-  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 3.8</div>`;
+  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 3.9</div>`;
   return { top: titleTop(t('Настройки')), body: b, after: async () => { const i = await storageInfo(); const el = $('#st_info'); if (el) el.textContent = t('Занято на телефоне: {a} · файлов: {n}, из них в облаке: {c}', { a: mb(i.used), n: i.n, c: i.cloud }); } };
 };
 async function testAI() { try { toast(t('Проверяю…')); const r = await AI.call([{ text: 'Reply with one word in ' + langName() + ': works' }]); toast(t('AI отвечает: {r} ✓', { r: r.slice(0, 40) }), 3000); } catch (e) { toast(e.message, 5000); } }

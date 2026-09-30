@@ -43,7 +43,7 @@ SCREENS.chat = () => {
       <button class="chip ${st.chatWeb ? 'on' : ''}" onclick="setVal('chatWeb',!S.set.chatWeb);render()">${ic('globe', 13)} ${t('Искать в интернете')}</button>
     </div>
     <div id="chatList" class="chat-list">${chatListHTML()}</div>
-    <div class="chat-in"><textarea id="ch_in" class="inp" rows="1" placeholder="${esc(t('Сообщение…'))}" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chatSend()}" oninput="this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'"></textarea><button class="mic-btn" type="button" onclick="dictateInto('ch_in',this,true)">${ic('mic', 18)}</button><button class="chat-send" onclick="chatSend()" aria-label="${esc(t('Отправить'))}">${ic('send', 18)}</button></div>`;
+    <div class="chat-in"><textarea id="ch_in" class="inp" rows="1" placeholder="${esc(t('Сообщение…'))}" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chatSend()}" oninput="Chat.draft=this.value;this.style.height='auto';this.style.height=Math.min(140,this.scrollHeight)+'px'">${esc(Chat.draft || '')}</textarea><button class="mic-btn" type="button" onclick="dictateInto('ch_in',this,true)">${ic('mic', 18)}</button><button class="chat-send" onclick="chatSend()" aria-label="${esc(t('Отправить'))}">${ic('send', 18)}</button></div>`;
   const clear = `<button class="tbtn" onclick="chatClear()" aria-label="${esc(t('Очистить'))}" title="${esc(t('Новый разговор'))}">${ic('trash')}</button>`;
   return { top: titleTop(t('Чат с AI'), { extra: clear }), body, after: () => chatScroll() };
 };
@@ -67,7 +67,7 @@ async function chatSend() {
   const q = inp.value.trim(); if (!q) return;
   if (!AI.ready()) return toast(t('Добавьте ключ Gemini в Настройках → AI'), 4000);
   stopDictation();
-  inp.value = ''; inp.style.height = 'auto';
+  inp.value = ''; Chat.draft = ''; inp.style.height = 'auto';
   Chat.msgs.push({ role: 'user', text: q, at: Date.now() });
   Chat.busy = true; chatRedraw();
   const me = S.set.name && !/@/.test(S.set.name) ? S.set.name : '';

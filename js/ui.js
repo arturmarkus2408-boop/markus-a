@@ -1,6 +1,7 @@
 'use strict';
 /* ================= icons ================= */
 const ICONS = {
+  ig: '<rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r=".9" fill="currentColor"/>',
   dots: '<circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/>',
   home: '<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/>',
   calendar: '<rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M16 2.5v4M8 2.5v4M3 10h18"/>',
@@ -199,6 +200,7 @@ function renderNav() {
 function go(route, arg) {
   if (route === 'meeting') S.meetingId = arg;
   if (route === 'calendar') S.scrollCal = true;
+  if (route !== 'docs') S.docSel = null;
   if (route !== S.route || route === 'meeting') { NavStack.push({ route: S.route, meetingId: S.meetingId }); if (NavStack.length > 40) NavStack.shift(); }
   S.route = route;
   render(); window.scrollTo(0, 0); ensureGuard();
@@ -275,8 +277,7 @@ function openEditor(kind = 'task', preset = {}) {
       <label class="lbl">${t('Повтор')}</label>
       <select class="inp" id="e_rep">${Object.keys(REPEAT).map(k => `<option value="${k}" ${E.repeat && E.repeat.type === k ? 'selected' : ''}>${t(REPEAT[k])}</option>`).join('')}</select>
       <div id="e_repx"></div>
-      <label class="lbl">${isMeet ? t('Участники и клиент') : t('Связанные люди и компании')}</label>
-      ${isMeet ? `<div class="hint" style="margin-top:-2px">${t('ФИО, телефон, Telegram, WhatsApp, почта, фото, откуда клиент — сохранятся в «Контактах».')}</div>` : ''}
+      <label class="lbl">${isMeet ? t('Участники') : t('Связанные люди и компании')}</label>
       <div id="e_people"></div>
       ${isMeet ? `<label class="lbl">${t('Место')}</label><input class="inp" id="e_place" value="${esc(E.place || '')}" placeholder="${esc(t('Офис, ресторан, адрес'))}">
       <div class="sw-row" style="margin-top:8px"><div><b>${t('Автозапись встречи')}</b><span>${t('Запись начнётся сама за {a} мин до начала и остановится через {b} мин после конца. Работает, если MARKUS-A открыт на экране; иначе придёт уведомление и сообщение в Telegram с кнопкой «Начать запись».', { a: S.set.recPre, b: S.set.recPost })}</span></div><button class="sw ${E.autoRecord ? 'on' : ''}" id="e_auto"></button></div>` : ''}
@@ -415,7 +416,7 @@ function edRenderPeople() {
   const box = $('#e_people'); if (!box) return;
   const cs = (E.contactIds || []).map(getItem).filter(c => c && !c.deleted);
   const names = (E.participants || []).filter(n => !cs.some(c => c.title === n));
-  box.innerHTML = `<div class="chips wrapchips">${cs.map(c => `<span class="chip on" onclick="edRemovePerson('${c.id}')">${ic('user', 13)} ${esc(c.title)} ✕</span>`).join('')}${names.map(n => `<span class="chip" onclick="edRemoveName('${esc(n).replace(/'/g, '&#39;')}')">${esc(n)} ✕</span>`).join('')}<button class="chip" onclick="edAddPerson()">${ic('plus', 13)} ${t('Выбрать из контактов')}</button><button class="chip on" onclick="edNewClient()">${ic('user', 13)} ${t('Новый клиент')}</button></div>`;
+  box.innerHTML = `<div class="chips wrapchips">${cs.map(c => `<span class="chip on" onclick="edRemovePerson('${c.id}')">${ic('user', 13)} ${esc(c.title)} ✕</span>`).join('')}${names.map(n => `<span class="chip" onclick="edRemoveName('${esc(n).replace(/'/g, '&#39;')}')">${esc(n)} ✕</span>`).join('')}<button class="chip" onclick="edAddPerson()">${ic('plus', 13)} ${t('Выбрать из контактов')}</button><button class="chip" onclick="edNewClient()">${ic('plus', 13)} ${t('Новый контакт')}</button></div>`;
 }
 async function edAddPerson() { const id = await pickContact(E.contactIds || []); if (!id) return; E.contactIds = Array.from(new Set((E.contactIds || []).concat(id))); edRenderPeople(); }
 function edRemovePerson(id) { E.contactIds = (E.contactIds || []).filter(x => x !== id); edRenderPeople(); }
