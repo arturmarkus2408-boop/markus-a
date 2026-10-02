@@ -578,6 +578,7 @@ SCREENS.settings = () => {
     <div class="btns"><button class="btn ghost" onclick="testAI()">${t('Проверить AI')}</button></div>
     <label class="lbl">${t('Задачи из встреч')}</label><div class="seg"><button class="${st.autoTasks === 'confirm' ? 'on' : ''}" onclick="setVal('autoTasks','confirm');render()">${t('С подтверждением')}</button><button class="${st.autoTasks === 'auto' ? 'on' : ''}" onclick="setVal('autoTasks','auto');render()">${t('Автоматически')}</button></div>
     <div class="sw-row"><div><b>${t('Отвечать голосом')}</b><span>${t('MARKUS-A озвучивает ответы на голосовые команды')}</span></div><button class="sw ${st.voiceReply ? 'on' : ''}" onclick="setVal('voiceReply',!S.set.voiceReply);render()"></button></div>
+    <label class="lbl">${t('Сколько ждать тишины, прежде чем обработать голос')}</label><select class="inp" onchange="setVal('voiceSilence',+this.value)">${[3, 5, 7, 10].map(n => `<option value="${n}" ${(+st.voiceSilence || 5) === n ? 'selected' : ''}>${n} ${t('сек')}</option>`).join('')}</select>
     <label class="lbl">${t('Голос ответов')}</label><select class="inp" onchange="setVal('ttsVoice',this.value);TTS.cache.clear()">${TTS_VOICES.map(([k, l]) => `<option value="${k}" ${(st.ttsVoice || 'Charon') === k ? 'selected' : ''}>${t(l)}</option>`).join('')}</select>
     <div class="btns" style="margin-top:6px"><button class="btn ghost" onclick="TTS.say(t('Здравствуйте! Я MARKUS-A. Так звучит мой голос.'))">${ic('play', 16)} ${t('Послушать')}</button></div>
     <div class="hint">${t('Голоса Gemini звучат как живой человек и работают через ваш ключ Gemini (бесплатно, с дневным лимитом). Если лимит закончится или нет интернета — читает голос телефона.')}</div></div>`;
@@ -606,7 +607,7 @@ SCREENS.settings = () => {
     <div class="btns"><button class="btn ghost" onclick="freePhoneMemory()">${t('Освободить память телефона')}</button></div></div>`;
   b += sec(t('Данные')) + `<div class="set-card"><div class="hint" style="margin-top:12px">${t('Резервная копия задач, встреч, контактов и заметок (без файлов).')}</div><div class="btns"><button class="btn ghost" onclick="exportBackup()">${ic('download', 16)} ${t('Скачать копию')}</button><label class="btn ghost">${t('Загрузить копию')}<input type="file" accept=".json,application/json" hidden onchange="importBackup(this.files[0])"></label></div>
     ${window._installPrompt ? `<div class="btns"><button class="btn pri" onclick="installApp()">${t('Установить приложение')}</button></div>` : ''}</div>`;
-  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 4.0</div>`;
+  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 4.1</div>`;
   return { top: titleTop(t('Настройки')), body: b, after: async () => { const i = await storageInfo(); const el = $('#st_info'); if (el) el.textContent = t('Занято на телефоне: {a} · файлов: {n}, из них в облаке: {c}', { a: mb(i.used), n: i.n, c: i.cloud }); } };
 };
 async function testAI() { try { toast(t('Проверяю…')); const r = await AI.call([{ text: 'Reply with one word in ' + langName() + ': works' }]); toast(t('AI отвечает: {r} ✓', { r: r.slice(0, 40) }), 3000); } catch (e) { toast(e.message, 5000); } }

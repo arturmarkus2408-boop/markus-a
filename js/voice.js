@@ -2,6 +2,13 @@
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 /* ================= dictation into a field ================= */
+/* only one microphone at a time: the voice window, the chat, drive mode and dictation never fight */
+function stopAllListening(except) {
+  if (except !== 'dict') stopDictation();
+  if (except !== 'voice' && typeof V !== 'undefined' && V && V.lis) { V.lis.cancel(); V.lis = null; }
+  if (except !== 'chat' && typeof Chat !== 'undefined' && Chat.rec) { Chat.rec.cancel(); Chat.rec = null; }
+  if (except !== 'drive' && window._driveLis) { window._driveLis.cancel(); window._driveLis = null; }
+}
 function srErrToast(err, got) {
   const m = { 'not-allowed': 'Разрешите доступ к микрофону', 'service-not-allowed': 'Разрешите доступ к микрофону', 'no-speech': 'Не расслышал — нажмите на микрофон и говорите', network: 'Для распознавания речи нужен интернет', 'not-supported': 'На телефоне не работает распознавание речи. Включите приложение «Google» (Настройки → Приложения → Google → Включить) и повторите.' }[err];
   if (m) toast(t(m), 5000);
@@ -11,6 +18,7 @@ let dict = null;
 function stopDictation() { if (dict) { try { dict.rec.stop(); } catch (e) { } if (dict.btn) dict.btn.classList.remove('on'); dict = null; } }
 function dictateInto(id, btn, multiline) {
   if (dict) { const same = dict.btn === btn; stopDictation(); if (same) return; }
+  stopAllListening('dict');
   if (!SR) return toast(t('Голосовой ввод работает в Chrome / Edge / Safari'));
   const el0 = document.getElementById(id); if (!el0) return;
   const rec = new SR(); rec.lang = srLang(); rec.continuous = true; rec.interimResults = false;
@@ -27,7 +35,7 @@ function dictateInto(id, btn, multiline) {
       if (dict) dict.got = true;
     }
   };
-  rec.onerror = e => { srErrToast(e.error, dict && dict.got); stopDictation(); };
+  rec.onerror = e => { if ((e.error === 'no-speech' || e.error === 'aborted') && dict && dict.got) return; srErrToast(e.error, dict && dict.got); stopDictation(); };   // a pause after some text: keep listening
   rec.onend = () => { if (dict && dict.rec === rec) { try { rec.start(); } catch (e) { stopDictation(); } } };
   try { rec.start(); } catch (e) { stopDictation(); }
 }
@@ -35,48 +43,88 @@ function dictateInto(id, btn, multiline) {
 /* ================= voice command overlay ================= */
 let V = null;
 function openVoice(mode = 'command') {
-  stopDictation();
+  stopAllListening(); if (typeof TTS !== 'undefined') TTS.stop(); try { Speech.stop(); } catch (e) { }   // the app must not hear its own voice
   const ov = $('#voiceOv');
   ov.innerHTML = `<div class="ov-top"><button onclick="closeVoice()" aria-label="${t('Закрыть')}">${ic('x', 22)}</button><b></b></div>
     <div class="ov-in">
       <div class="vo-h" id="vo_h">${SR ? t('Говорите…') : t('Напишите команду')}</div>
       <button class="vo-mic ${SR ? 'on' : ''}" id="vo_mic" onclick="voiceMicToggle()"><i>${ic('mic', 44)}</i></button>
       <div class="vo-heard" id="vo_heard"></div>
+      <button class="btn pri" id="vo_done" hidden onclick="voiceDone()" style="margin:4px auto 10px;min-width:180px">✓ ${t('Готово')}</button>
       <div class="vo-box" id="vo_ex"><b>${t('Например:')}</b>${mode === 'note' ? t('«Проверить договор до пятницы и позвонить бухгалтеру»') : [t('«Завтра в 14:00 встреча с Алишером на час»'), t('«30 сентября в 21:00 напомни, что 1 октября день рождения у Жужика»'), t('«Напомни через два часа позвонить бухгалтеру»'), t('«Что у меня сегодня после обеда?»'), t('«Найди свободное окно на полтора часа до пятницы»')].join('<br>')}</div>
       <div class="vo-box" id="vo_steps" hidden></div>
       <div class="vo-inp"><input id="vo_text" placeholder="${t('…или напишите здесь')}" onkeydown="if(event.key==='Enter')voiceSubmit()"><button onclick="voiceSubmit()" aria-label="${t('Отправить')}">${ic('send', 18)}</button></div>
       <button class="btn dk-ghost" onclick="closeVoice()">${t('Отменить')}</button>
     </div>`;
   ov.hidden = false;
-  V = { mode, rec: null, final: '', busy: false };
+  V = { mode, lis: null, busy: false };
   if (SR) voiceListen(); else setTimeout(() => $('#vo_text').focus(), 100);
 }
-function closeVoice() { if (V && V.rec) { V.cancel = true; try { V.rec.abort(); } catch (e) { } } V = null; $('#voiceOv').hidden = true; }
+function closeVoice() { if (V) { V.cancel = true; if (V.lis) V.lis.cancel(); } V = null; $('#voiceOv').hidden = true; }
+/* v4.1: listen to the END. The phone's recognizer stops at the first short pause, so we start it again
+   and again, collect everything, and finish only after N seconds of silence (5 s by default) — or on «Готово». */
+function listenLong(o = {}) {
+  const st = { final: '', interim: '', on: true, last: Date.now(), heard: false, rec: null, fatal: null };
+  const SIL = (+S.set.voiceSilence || 5) * 1000, FIRST = Math.max(SIL, 9000);
+  let ended = false;
+  const text = () => (st.final + ' ' + st.interim).replace(/\s+/g, ' ').trim();
+  const one = () => {
+    if (!st.on) return;
+    const rec = new SR(); rec.lang = srLang(); rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
+    st.rec = rec;
+    rec.onresult = e => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const tx = (e.results[i][0].transcript || '').trim(); if (!tx) continue;
+        if (e.results[i].isFinal) st.final = (st.final + ' ' + tx).trim(); else interim += (interim ? ' ' : '') + tx;
+      }
+      st.interim = interim; st.last = Date.now(); st.heard = true;
+      if (o.onText) o.onText(text());
+    };
+    rec.onerror = e => { if (['not-allowed', 'service-not-allowed', 'not-supported', 'network'].includes(e.error)) st.fatal = e.error; };
+    rec.onend = () => {
+      st.rec = null;
+      if (st.interim) { st.final = (st.final + ' ' + st.interim).trim(); st.interim = ''; }   // a phrase cut by the pause is kept
+      if (st.fatal) { st.on = false; return end(); }
+      if (st.on) setTimeout(one, 150); else end();
+    };
+    try { rec.start(); } catch (e) { setTimeout(one, 400); }
+  };
+  const tick = setInterval(() => {
+    if (!st.on) return;
+    const quiet = Date.now() - st.last;
+    if (o.onTick) o.onTick(st.heard ? Math.max(0, Math.ceil((SIL - quiet) / 1000)) : null, quiet);
+    if ((st.heard && quiet >= SIL) || (!st.heard && quiet >= FIRST)) stop();
+  }, 250);
+  function end() { if (ended) return; ended = true; clearInterval(tick); if (st.fatal) srErrToast(st.fatal, st.heard); if (o.onDone) o.onDone(text()); }
+  function stop() { if (!st.on) return; st.on = false; if (st.rec) { try { st.rec.stop(); } catch (e) { } setTimeout(end, 1800); } else end(); }
+  function cancel() { st.on = false; ended = true; clearInterval(tick); if (st.rec) { try { st.rec.abort(); } catch (e) { } } }
+  one();
+  return { stop, cancel, st, text };
+}
 function voiceListen() {
   if (!V) return;
-  const rec = new SR(); rec.lang = srLang(); rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
-  V.rec = rec; V.final = '';
-  $('#vo_mic').classList.add('on'); $('#vo_h').textContent = t('Говорите…');
-  rec.onresult = e => {
-    let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) { const tx = e.results[i][0].transcript; if (e.results[i].isFinal) V.final += tx; else interim += tx; }
-    $('#vo_heard').textContent = (V.final + ' ' + interim).trim();
-  };
-  rec.onerror = e => { if (e.error === 'not-allowed') { toast(t('Разрешите доступ к микрофону')); } if (V) { $('#vo_h').textContent = t('Не расслышал — повторите или напишите'); } };
-  rec.onend = () => {
-    if (!V || V.cancel) return;
-    $('#vo_mic').classList.remove('on');
-    const heard = (V.final || '').trim();
-    if (heard) processVoiceText(heard); else if (!V.busy) $('#vo_h').textContent = t('Нажмите на микрофон и говорите');
-  };
-  try { rec.start(); } catch (e) { }
+  if (V.lis) V.lis.cancel();
+  $('#vo_mic').classList.add('on'); $('#vo_h').textContent = t('Слушаю… Говорите спокойно, со всеми деталями');
+  const done = $('#vo_done'); if (done) done.hidden = false;
+  V.lis = listenLong({
+    onText: x => { const h = $('#vo_heard'); if (h) h.textContent = x; },
+    onTick: (left, quiet) => { const h = $('#vo_h'); if (!h || !V || V.busy) return; h.textContent = left != null && quiet > 1200 ? t('Пауза… обработаю через {n} с — или продолжайте говорить', { n: left }) : t('Слушаю… Говорите спокойно, со всеми деталями'); },
+    onDone: heard => {
+      if (!V || V.cancel) return;
+      V.lis = null; $('#vo_mic').classList.remove('on'); const d = $('#vo_done'); if (d) d.hidden = true;
+      if (heard) { $('#vo_heard').textContent = heard; processVoiceText(heard); }
+      else if (!V.busy) $('#vo_h').textContent = t('Не расслышал — нажмите на микрофон и говорите');
+    }
+  });
 }
 function voiceMicToggle() {
   if (!V || V.busy) return;
   if (!SR) { $('#vo_text').focus(); return; }
-  if ($('#vo_mic').classList.contains('on')) { try { V.rec.stop(); } catch (e) { } } else voiceListen();
+  if (V.lis) V.lis.stop(); else voiceListen();   // pressed while listening = «готово»
 }
-function voiceSubmit() { const typed = $('#vo_text').value.trim(); if (!typed || !V) return; if (V.rec) { V.cancel = true; try { V.rec.abort(); } catch (e) { } V.cancel = false; } $('#vo_heard').textContent = typed; processVoiceText(typed); }
+function voiceDone() { if (V && V.lis) V.lis.stop(); }
+function voiceSubmit() { const typed = $('#vo_text').value.trim(); if (!typed || !V) return; if (V.lis) { V.lis.cancel(); V.lis = null; } $('#vo_heard').textContent = typed; processVoiceText(typed); }
 async function processVoiceText(said) {
   if (!V || V.busy) return;
   V.busy = true;
@@ -102,11 +150,15 @@ async function handleCommand(text, o = {}) {
     const st = splitTitle(text); return openEditor('task', { title: cap(st.title), desc: st.rest });
   }
   let p;
+  const myV = V;
+  const gone = () => o.fromVoice && (V !== myV || !myV || myV.cancel);   // the user closed the voice window meanwhile
   try { p = await AI.parseCommand(text); if (!p || typeof p !== 'object' || Array.isArray(p)) throw new Error(t('AI вернул непонятный ответ')); }
-  catch (e) { closeVoice(); toast(e.message, 5000); const st = splitTitle(text); return openEditor('task', { title: cap(st.title), desc: st.rest }); }
+  catch (e) { if (gone()) return; if (V === myV) closeVoice(); toast(e.message, 5000); const st = splitTitle(text); return openEditor('task', { title: cap(st.title), desc: st.rest }); }
+  if (gone()) return;
   sanitizeParsed(p);
   if (V) { $$('#vo_steps i').forEach(i => i.className = 'ok'); await sleep(350); }
-  closeVoice();
+  if (gone()) return;
+  if (V === myV) closeVoice();
   if (o.forceCreate && !['create_task', 'create_meeting'].includes(p.intent)) p.intent = 'create_task';
   switch (p.intent) {
     case 'create_reminder': return reminderFlow(p, text);
@@ -199,8 +251,11 @@ async function createFlow(p, text) {
   const r = await resolveConflicts(d); if (!r) return;
   computeReminders(d);
   const nx = nextRemindISO(d);
-  const info = `<b>${esc(d.title)}</b><br>${esc(whenLabel(d))}${d.priority !== 'normal' ? ' · ' + t(PRIO[d.priority].l) : ''}${d.participants.length ? '<br>' + t('Участники') + ': ' + esc(d.participants.join(', ')) : ''}${nx ? '<br>' + t('Первое напоминание') + ': ' + esc(new Date(nx).toLocaleString(locale(), { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })) : ''}${d.nag ? '<br>' + t('Буду напоминать, пока не отметите «Выполнено»') : ''}`;
-  const v = await dialog({ title: kind === 'meeting' ? t('Создать встречу?') : t('Создать задачу?'), text: info, buttons: [{ l: t('Создать'), v: 'ok', p: 1 }, { l: t('Изменить детали'), v: 'edit' }, { l: t('Отмена'), v: null }] });
+  const info = `${esc(whenLabel(d))}${d.priority !== 'normal' ? ' · ' + t(PRIO[d.priority].l) : ''}${d.participants.length ? '<br>' + t('Участники') + ': ' + esc(d.participants.join(', ')) : ''}${nx ? '<br>' + t('Первое напоминание') + ': ' + esc(new Date(nx).toLocaleString(locale(), { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })) : ''}${d.nag ? '<br>' + t('Буду напоминать, пока не отметите «Выполнено»') : ''}`;
+  const v = await dialog({ title: kind === 'meeting' ? t('Создать встречу?') : t('Создать задачу?'), text: info,
+    html: `<label class="lbl">${t('Название')}</label><div class="inp-mic"><textarea class="inp" id="cf_t" rows="2" style="min-height:58px">${esc(d.title)}</textarea><button class="mic-sm" type="button" onclick="dictateInto('cf_t',this,true)" aria-label="${esc(t('Надиктовать'))}">${ic('mic')}</button></div><div class="hint">${t('Вы сказали')}: «${esc(shortTitle(text, 300))}»</div>`,
+    buttons: [{ l: t('Создать'), v: sh => { const x = $('#cf_t', sh).value.trim(); if (x) d.title = shortTitle(x, 150); return 'ok'; }, p: 1 }, { l: t('Изменить детали'), v: sh => { const x = $('#cf_t', sh).value.trim(); if (x) d.title = shortTitle(x, 150); return 'edit'; } }, { l: t('Отмена'), v: null }] });
+  stopDictation();
   if (v === 'ok') { await saveItem(d); toast(t('Создано ✓')); speak((kind === 'meeting' ? t('Встреча создана') : t('Задача создана')) + ': ' + (d.date ? D.human(d.date) : '') + (d.start ? ' ' + t('в {t}', { t: d.start }) : '')); }
   else if (v === 'edit') openEditor(kind, d);
 }
@@ -208,37 +263,48 @@ async function createFlow(p, text) {
 function isBirthday(x) { return /д(ень|\.)\s*р(ождени|\.)|днюх|юбилей|годовщин|birthday|anniversary|tug['ʻ’]?ilgan kun|doğum günü|geburtstag/i.test(String(x || '')); }
 async function reminderFlow(p, text) {
   const ev = p.event && p.event.date ? p.event : null;
-  const bday = !!(ev && ['birthday', 'anniversary'].includes(ev.type)) || isBirthday(p.title || text);
+  const who = String((p.event && p.event.person) || '').trim();
+  const bday = !!(p.event && ['birthday', 'anniversary'].includes(p.event.type)) || isBirthday(p.title || text);
   let title = cap(shortTitle(p.title || text));
+  // «День рождения» alone is useless — whose? The name always goes into the title.
+  if (who && !title.toLowerCase().includes(who.toLowerCase().slice(0, Math.max(3, who.length - 2)))) title = title.replace(/[.\s]+$/, '') + ' — ' + who;
+  if (bday && ev && !/\d/.test(title)) title += ' (' + D.short(ev.date) + ')';
   if (bday && !/^\p{Extended_Pictographic}/u.test(title)) title = '🎂 ' + title;
   let at = p.remindAt ? new Date(p.remindAt) : null; if (at && isNaN(at)) at = null;
-  if (!at) {
-    const td = D.today(), opts = [];
-    if (ev) {
-      if (D.add(ev.date, -1) >= td) opts.push({ l: t('Накануне в {t}', { t: '21:00' }) + ' (' + D.human(D.add(ev.date, -1)) + ')', v: D.add(ev.date, -1) + 'T21:00', p: 1 });
-      opts.push({ l: t('В тот день в {t}', { t: '09:00' }) + ' (' + D.human(ev.date) + ')', v: ev.date + 'T09:00', p: 1 });
-    } else {
-      opts.push({ l: t('Через час'), v: (() => { const d = new Date(Date.now() + 3600000); return D.fmt(d) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()); })(), p: 1 });
-      opts.push({ l: t('Сегодня вечером') + ' ' + (S.set.eveTime || '19:00'), v: td + 'T' + (S.set.eveTime || '19:00'), p: 1 });
-      opts.push({ l: t('Завтра утром') + ' ' + S.set.morningTime, v: D.add(td, 1) + 'T' + S.set.morningTime });
-    }
-    const v = await askChoice(t('Когда напомнить?'), esc(title), opts, { type: 'datetime-local', label: t('Выбрать дату и время') });
-    if (!v) return;
-    at = new Date(v); if (isNaN(at)) return;
-  }
-  const hm = pad(at.getHours()) + ':' + pad(at.getMinutes());
-  const d = newItem('task', { title, date: D.fmt(at), start: hm, end: hm, reminders: [0], reminder: true, priority: ['normal', 'high', 'critical'].includes(p.priority) ? p.priority : 'normal', category: matchCat(p.category, 'task') });
-  if (ev) d.eventDate = ev.date;
+  const td = D.today(), dt = d => D.fmt(d) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  const quick = [];
+  if (ev && D.add(ev.date, -1) >= td) quick.push([t('Накануне в {t}', { t: '21:00' }), D.add(ev.date, -1) + 'T21:00']);
+  if (ev) quick.push([t('В тот день в {t}', { t: '09:00' }), ev.date + 'T09:00']);
+  quick.push([t('Через час'), dt(new Date(Date.now() + 3600000))], [t('Сегодня вечером') + ' ' + (S.set.eveTime || '19:00'), td + 'T' + (S.set.eveTime || '19:00')], [t('Завтра утром') + ' ' + S.set.morningTime, D.add(td, 1) + 'T' + S.set.morningTime]);
+  for (let k = quick.length - 1; k >= 0; k--) if (new Date(quick[k][1]).getTime() <= Date.now() + 60000) quick.splice(k, 1);   // only times that are still ahead
   const yearly0 = bday || !!p.yearly;
-  const info = `<b>${esc(title)}</b><br>🔔 ${t('Напомню')}: ${esc(D.human(d.date))}, ${hm}${ev ? '<br>📅 ' + t('Событие') + ': ' + esc(D.long(ev.date)) : ''}
-    <div class="hint" style="margin-top:6px">${NATIVE ? t('Придёт уведомление на телефон') : t('Придёт уведомление на это устройство')}${tgReady() ? ' ' + t('и сообщение в Telegram') : ''}.</div>`;
+  // one card: what (editable), when (editable), every year — and «Сохранить»
   const v = await dialog({
-    title: t('Сохранить напоминание?'), text: info,
-    html: `<div class="sw-row"><div><b>${t('Повторять каждый год')}</b><span>${t('Дни рождения, годовщины, праздники')}</span></div><button class="sw ${yearly0 ? 'on' : ''}" id="rm_y" onclick="this.classList.toggle('on')"></button></div>`,
-    buttons: [{ l: t('Сохранить'), v: sh => ({ y: $('#rm_y', sh).classList.contains('on') }), p: 1 }, { l: t('Изменить детали'), v: 'edit' }, { l: t('Отмена'), v: null }]
+    title: t('Сохранить напоминание?'),
+    html: `<label class="lbl">${t('О чём напомнить')}</label>
+      <div class="inp-mic"><textarea class="inp" id="rm_t" rows="2" style="min-height:58px">${esc(title)}</textarea><button class="mic-sm" type="button" onclick="dictateInto('rm_t',this,true)" aria-label="${esc(t('Надиктовать'))}">${ic('mic')}</button></div>
+      <label class="lbl">🔔 ${t('Когда напомнить')}</label><input class="inp" type="datetime-local" id="rm_at" value="${at ? dt(at) : ''}">
+      <div class="chips wrapchips" style="margin-top:6px">${quick.map(([l, x]) => `<button class="chip" type="button" onclick="document.getElementById('rm_at').value='${x}'">${esc(l)}</button>`).join('')}</div>
+      ${ev ? `<div class="hint">📅 ${t('Событие')}: ${esc(D.long(ev.date))}</div>` : ''}
+      <div class="sw-row"><div><b>${t('Повторять каждый год')}</b><span>${t('Дни рождения, годовщины, праздники')}</span></div><button class="sw ${yearly0 ? 'on' : ''}" id="rm_y" onclick="this.classList.toggle('on')"></button></div>
+      <div class="hint">${t('Вы сказали')}: «${esc(text)}»<br>${NATIVE ? t('Придёт уведомление на телефон') : t('Придёт уведомление на это устройство')}${tgReady() ? ' ' + t('и сообщение в Telegram') : ''}.</div>`,
+    buttons: [{ l: t('Сохранить'), p: 1, v: sh => {
+      const ttl = $('#rm_t', sh).value.trim(), w = new Date($('#rm_at', sh).value);
+      if (!ttl) { toast(t('Напишите, о чём напомнить')); return false; }
+      if (isNaN(w)) { toast(t('Укажите дату и время напоминания')); return false; }
+      if (w.getTime() < Date.now() - 60000) { toast(t('Это время уже прошло — выберите время впереди')); return false; }
+      return { ttl, w, y: $('#rm_y', sh).classList.contains('on') };
+    } }, { l: t('Изменить детали'), v: sh => { const w = new Date($('#rm_at', sh).value); return { edit: true, ttl: $('#rm_t', sh).value.trim() || title, w: isNaN(w) ? null : w, y: $('#rm_y', sh).classList.contains('on') }; } }, { l: t('Отмена'), v: null }],
+    onMount: sh => { stopDictation(); }
   });
+  stopDictation();
   if (!v) return;
-  if (v === 'edit') return openEditor('task', d);
+  const when = v.w || at || new Date(Date.now() + 3600000), hm = pad(when.getHours()) + ':' + pad(when.getMinutes());
+  const cat = (S.set.categories || []).find(c => c.id === 'personal');
+  const d = newItem('task', { title: v.ttl, desc: text, date: D.fmt(when), start: hm, end: hm, reminders: [0], reminder: true,
+    priority: ['normal', 'high', 'critical'].includes(p.priority) ? p.priority : 'normal', category: bday && cat ? cat.id : matchCat(p.category, 'task') });
+  if (ev) d.eventDate = ev.date;
+  if (v.edit) { if (v.y) d.repeat = { type: 'yearly' }; return openEditor('task', d); }   // the editor gets what you typed and chose
   if (v.y) d.repeat = { type: 'yearly' };
   await saveItem(d);
   toast(t('Напоминание сохранено ✓') + ' ' + D.human(d.date) + ' ' + hm, 3500);

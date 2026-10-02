@@ -98,14 +98,15 @@ SCREENS.drive = () => {
   return { top: titleTop(t('За рулём')), body: b, after: () => driveWakeOn() };
 };
 async function driveAsk() {
-  const SRc = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SRc) return toast(t('Голосовой ввод работает в Chrome / Edge / Safari'));
-  Speech.stop();
-  const rec = new SRc(); rec.lang = srLang(); rec.interimResults = false; rec.maxAlternatives = 1;
+  if (!SR) return toast(t('Голосовой ввод работает в Chrome / Edge / Safari'));
+  Speech.stop(); if (typeof TTS !== 'undefined') TTS.stop();
+  if (window._driveLis) { window._driveLis.stop(); return; }
+  stopAllListening('drive');
   driveStatus('🎙 ' + t('Говорите…'));
-  rec.onresult = e => { const q = (e.results[0][0].transcript || '').trim(); if (q) driveAnswer(q); };
-  rec.onerror = e => { driveStatus(e.error === 'not-allowed' ? t('Разрешите доступ к микрофону') : t('Не расслышал — повторите или напишите')); };
-  try { rec.start(); } catch (e) { }
+  window._driveLis = listenLong({
+    onText: x => driveStatus('🎙 ' + x),
+    onDone: q => { window._driveLis = null; if (S.route !== 'drive') return; if (q) driveAnswer(q); else driveStatus(t('Не расслышал — повторите или напишите')); }
+  });
 }
 async function driveAnswer(q) {
   driveStatus('«' + q + '»\n' + t('MARKUS-A думает…'));

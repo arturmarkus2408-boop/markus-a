@@ -64,27 +64,22 @@ function chatContext() {
 }
 /* 🎤 ask by voice: speak — the question goes by itself — the answer is read aloud */
 function chatMic(btn) {
-  if (Chat.rec) { try { Chat.rec.stop(); } catch (e) { } return; }
+  if (Chat.rec) { Chat.rec.stop(); return; }   // pressed again = «готово, отправляй»
   if (!SR) return toast(t('Голосовой ввод работает в Chrome / Edge / Safari'));
-  TTS.stop(); stopDictation();
+  TTS.stop(); stopAllListening('chat');
   const inp = $('#ch_in'); const base = inp ? inp.value.trim() : '';
-  const rec = new SR(); rec.lang = srLang(); rec.continuous = false; rec.interimResults = true;
-  Chat.rec = rec; let fin = '', heard = false;
   btn.classList.add('on'); if (inp) inp.placeholder = t('Слушаю… говорите');
-  rec.onresult = e => {
-    let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) { const tx = e.results[i][0].transcript; if (e.results[i].isFinal) fin += (fin ? ' ' : '') + tx.trim(); else interim += tx; }
-    heard = true;
-    const el = $('#ch_in'); if (el) { el.value = [base, fin, interim.trim()].filter(Boolean).join(' '); Chat.draft = el.value; }
-  };
-  rec.onerror = e => { if (e.error !== 'aborted') srErrToast(e.error, heard); };
-  rec.onend = () => {
-    Chat.rec = null;
-    const b = $('.chat-in .mic-btn'); if (b) b.classList.remove('on');
-    const el = $('#ch_in'); if (el) el.placeholder = t('Сообщение…');
-    if (fin && el && el.value.trim()) chatSend({ voice: true });
-  };
-  try { rec.start(); toast(t('Говорите — вопрос отправится сам, ответ прозвучит голосом'), 2500); } catch (e) { Chat.rec = null; btn.classList.remove('on'); }
+  Chat.rec = listenLong({
+    onText: x => { const el = $('#ch_in'); if (el) { el.value = [base, x].filter(Boolean).join(' '); Chat.draft = el.value; el.style.height = 'auto'; el.style.height = Math.min(140, el.scrollHeight) + 'px'; } },
+    onTick: left => { const el = $('#ch_in'); if (el) el.placeholder = left != null ? t('Пауза… отправлю через {n} с', { n: left }) : t('Слушаю… говорите'); },
+    onDone: x => {
+      Chat.rec = null;
+      const b = $('.chat-in .mic-btn'); if (b) b.classList.remove('on');
+      const el = $('#ch_in'); if (el) el.placeholder = t('Сообщение…');
+      if (x && el && el.value.trim()) chatSend({ voice: true });
+    }
+  });
+  toast(t('Говорите — замолчите на {n} с, и вопрос отправится сам. Ответ прозвучит голосом.', { n: +S.set.voiceSilence || 5 }), 3500);
 }
 function chatSpeak(i) {
   if (TTS.on && TTS.owner === i) return TTS.stop();
@@ -92,6 +87,7 @@ function chatSpeak(i) {
 }
 async function chatSend(o = {}) {
   const inp = $('#ch_in'); if (!inp || Chat.busy) return;
+  if (Chat.rec && !o.voice) { Chat.rec.cancel(); Chat.rec = null; const b = $('.chat-in .mic-btn'); if (b) b.classList.remove('on'); inp.placeholder = t('Сообщение…'); }
   const q = inp.value.trim(); if (!q) return;
   if (!AI.ready()) return toast(t('Добавьте ключ Gemini в Настройках → AI'), 4000);
   stopDictation();

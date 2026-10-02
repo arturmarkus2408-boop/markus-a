@@ -300,6 +300,7 @@ async function rollReminders() {
   const lim = Date.now() - 12 * 3600000;
   for (const it of S.items) {
     if (!it.reminder || it.deleted || !isOpen(it) || !it.date) continue;
+    if (it.customRemind && Date.parse(it.customRemind) > lim) continue;   // snoozed («Отложить…») — wait for that time
     if (!it.repeat || it.repeat.type === 'none') {   // a one-time reminder is finished half a day after it rang
       if (D.dt(it.date, it.start || '09:00').getTime() <= lim) { it.status = 'done'; it.doneAt = new Date().toISOString(); await saveItem(it, { render: false }); }
       continue;

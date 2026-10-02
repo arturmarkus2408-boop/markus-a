@@ -1458,3 +1458,106 @@ Object.assign(window.I18N_DICT.de, {"Автозапись на этом теле
   const L = ['en', 'uz', 'tr', 'de'];
   for (const k in T) L.forEach((l, i) => { window.I18N_DICT[l] = window.I18N_DICT[l] || {}; window.I18N_DICT[l][k] = T[k][i]; });
 })();
+/* v4.1 — listening to the end, reminder card */
+(function () {
+  const T = {
+"Пауза… отправлю через {n} с": [
+"Pause… sending in {n} s",
+"Pauza… {n} soniyadan keyin yuboraman",
+"Duraklama… {n} sn sonra gönderirim",
+"Pause… sende in {n} s"
+],
+"Говорите — замолчите на {n} с, и вопрос отправится сам. Ответ прозвучит голосом.": [
+"Speak — stay silent for {n} s and the question is sent by itself. The answer will be read aloud.",
+"Gapiring — {n} soniya jim tursangiz, savol o‘zi yuboriladi. Javob ovozda eshitiladi.",
+"Konuşun — {n} sn sessiz kalınca soru kendiliğinden gider. Cevap sesli okunur.",
+"Sprechen Sie — nach {n} s Stille wird die Frage gesendet. Die Antwort wird vorgelesen."
+],
+"В карточке нет {a} — отправлю через {b}": [
+"No {a} in the card — sending via {b}",
+"Kartada {a} yo‘q — {b} orqali yuboraman",
+"Kartta {a} yok — {b} ile gönderiyorum",
+"Kein {a} in der Karte — sende über {b}"
+],
+"Сколько ждать тишины, прежде чем обработать голос": [
+"How long to wait for silence before processing your voice",
+"Ovozni qayta ishlashdan oldin qancha jimlik kutish",
+"Sesi işlemeden önce ne kadar sessizlik beklensin",
+"Wie lange Stille abwarten, bevor die Stimme verarbeitet wird"
+],
+"сек": [
+"sec",
+"son",
+"sn",
+"Sek"
+],
+"Слушаю… Говорите спокойно, со всеми деталями": [
+"Listening… Speak calmly, with all the details",
+"Tinglayapman… Xotirjam, barcha tafsilotlar bilan gapiring",
+"Dinliyorum… Sakin ve tüm ayrıntılarla konuşun",
+"Ich höre… Sprechen Sie ruhig, mit allen Details"
+],
+"Пауза… обработаю через {n} с — или продолжайте говорить": [
+"Pause… processing in {n} s — or keep talking",
+"Pauza… {n} soniyadan keyin qayta ishlayman — yoki gapirishda davom eting",
+"Duraklama… {n} sn sonra işlerim — ya da konuşmaya devam edin",
+"Pause… verarbeite in {n} s — oder sprechen Sie weiter"
+],
+"Вы сказали": [
+"You said",
+"Siz aytdingiz",
+"Söylediğiniz",
+"Sie sagten"
+],
+"О чём напомнить": [
+"What to remind about",
+"Nima haqida eslatay",
+"Neyi hatırlatayım",
+"Woran erinnern"
+],
+"Когда напомнить": [
+"When to remind",
+"Qachon eslatay",
+"Ne zaman hatırlatayım",
+"Wann erinnern"
+],
+"Напишите, о чём напомнить": [
+"Write what to remind about",
+"Nima haqida eslatishni yozing",
+"Neyi hatırlatacağımı yazın",
+"Schreiben Sie, woran erinnert werden soll"
+],
+"Укажите дату и время напоминания": [
+"Set the date and time of the reminder",
+"Eslatma sanasi va vaqtini kiriting",
+"Hatırlatma tarihini ve saatini girin",
+"Datum und Uhrzeit der Erinnerung angeben"
+],
+"Это время уже прошло — выберите время впереди": [
+"That time has passed — choose a time ahead",
+"Bu vaqt o‘tib ketgan — oldindagi vaqtni tanlang",
+"Bu saat geçti — ileri bir saat seçin",
+"Diese Zeit ist vorbei — wählen Sie eine spätere"
+],
+"Готово": [
+"Done",
+"Tayyor",
+"Tamam",
+"Fertig"
+],
+"Надиктовать": [
+"Dictate",
+"Aytib yozdirish",
+"Dikte et",
+"Diktieren"
+],
+"Название": [
+"Title",
+"Nomi",
+"Başlık",
+"Titel"
+]
+};
+  const L = ['en', 'uz', 'tr', 'de'];
+  for (const k in T) L.forEach((l, i) => { window.I18N_DICT[l] = window.I18N_DICT[l] || {}; window.I18N_DICT[l][k] = T[k][i]; });
+})();

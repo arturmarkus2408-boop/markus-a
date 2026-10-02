@@ -202,6 +202,7 @@ function go(route, arg) {
   if (route === 'meeting') S.meetingId = arg;
   if (route === 'calendar') S.scrollCal = true;
   if (route !== 'docs') S.docSel = null;
+  if (route !== S.route && typeof stopAllListening === 'function') stopAllListening();   // leaving a screen ends its listening
   if (route !== S.route || route === 'meeting') { NavStack.push({ route: S.route, meetingId: S.meetingId }); if (NavStack.length > 40) NavStack.shift(); }
   S.route = route;
   render(); window.scrollTo(0, 0); ensureGuard();

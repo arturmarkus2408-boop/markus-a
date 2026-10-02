@@ -51,12 +51,13 @@ const TTS = {
     throw lastErr || new Error('TTS');
   },
   play(blob, my) {
-    return new Promise(res => {
+    return new Promise((res, rej) => {
       const a = new Audio(URL.createObjectURL(blob)); TTS.audio = a;
-      a.onended = () => { URL.revokeObjectURL(a.src); res(); };
-      a.onerror = () => res();
+      const fin = () => { URL.revokeObjectURL(a.src); if (TTS.audio === a) TTS.audio = null; res(); };
+      a.onended = fin;
+      a.onerror = () => { if (TTS.audio === a) TTS.audio = null; rej(new Error('audio')); };
       if (my !== TTS.token) return res();
-      a.play().catch(() => res());
+      a.play().catch(e => { if (TTS.audio === a) TTS.audio = null; rej(e); });   // the phone refused to play → the phone's voice reads instead
     });
   },
   async say(text, o = {}) {
@@ -76,6 +77,8 @@ const TTS = {
           if (my !== TTS.token) return;
           next = i + 1 < chunks.length ? TTS.fetch(chunks[i + 1]) : null;
           if (next) next.catch(() => { });
+          while (TTS.paused && my === TTS.token) await sleep(200);   // «пауза» pressed while the next piece was loading
+          if (my !== TTS.token) return;
           await TTS.play(blob, my);
           while (TTS.paused && my === TTS.token) await sleep(200);   // «пауза» — wait here
           if (my !== TTS.token) return;
@@ -93,9 +96,10 @@ const TTS = {
   },
   pause() {
     if (!TTS.on) return;
-    if (TTS.engine === 'gemini' && TTS.audio) {
+    if (TTS.engine === 'gemini') {
       TTS.paused = !TTS.paused;
-      if (TTS.paused) TTS.audio.pause(); else TTS.audio.play().catch(() => { });
+      const a = TTS.audio;
+      if (a && !a.ended) { if (TTS.paused) a.pause(); else a.play().catch(() => { }); }   // a finished piece is never played again
     } else if (!NATIVE && window.speechSynthesis) {
       TTS.paused = !TTS.paused;
       try { TTS.paused ? speechSynthesis.pause() : speechSynthesis.resume(); } catch (e) { }

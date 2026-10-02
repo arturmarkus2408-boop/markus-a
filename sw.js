@@ -1,5 +1,5 @@
 /* MARKUS-A service worker: offline cache + notification actions */
-const CACHE = 'markus-a-v13';
+const CACHE = 'markus-a-v14';
 const CORE = ['./', './index.html', './config.js', './manifest.json', './css/app.css',
   './js/core.js', './js/native.js', './js/i18n-dict.js', './js/i18n.js', './js/logic.js', './js/ai.js', './js/cloud.js', './js/ui.js', './js/screens.js', './js/extras.js', './js/actions.js', './js/places.js', './js/help.js', './js/assist.js', './js/voice.js', './js/tts.js', './js/people.js', './js/chat.js', './js/main.js',
   './icons/icon-192.png', './icons/icon-512.png'];

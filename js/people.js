@@ -187,8 +187,16 @@ async function contactCommand(id) {
     if (!ph) return toast(t('У контакта нет телефона — добавьте его в карточке'), 4000);
     return window.open('tel:' + digits(ph), '_self');
   }
-  const ch = /телеграм|telegram|телеге|тг\b|в тг/.test(low) ? 'tg' : /ватсап|вотсап|вацап|whatsapp|вотс/.test(low) ? 'wa' : /почт|e-?mail|имейл|емейл|письм/.test(low) ? 'mail' : (c.telegram ? 'tg' : contactPhones(c).length || c.whatsapp ? 'wa' : c.email ? 'mail' : '');
+  let ch = /телеграм|telegram|телеге|тг\b|в тг/.test(low) ? 'tg' : /ватсап|вотсап|вацап|whatsapp|вотс/.test(low) ? 'wa' : /почт|e-?mail|имейл|емейл|письм/.test(low) ? 'mail' : (c.telegram ? 'tg' : contactPhones(c).length || c.whatsapp ? 'wa' : c.email ? 'mail' : '');
   if (!ch) return toast(t('У контакта нет ни Telegram, ни телефона, ни почты'), 4000);
+  const has = { tg: !!c.telegram, wa: !!(c.whatsapp || contactPhones(c)[0]), mail: !!c.email };
+  if (!has[ch]) {   // asked for Telegram, but there is no Telegram in the card
+    const alt = ['tg', 'wa', 'mail'].find(k => has[k]);
+    const nm = { tg: 'Telegram', wa: 'WhatsApp', mail: 'Email' };
+    if (!alt) return toast(t('У контакта нет ни Telegram, ни телефона, ни почты'), 4000);
+    toast(t('В карточке нет {a} — отправлю через {b}', { a: nm[ch], b: nm[alt] }), 4000);
+    ch = alt;
+  }
   let text = v.replace(/^(напиши|отправь|написать|отправить|скажи|передай|сообщи)\s*(ему|ей|им)?\s*(в|на|по)?\s*(телеграм\w*|telegram|тг|ватсап\w*|вотсап\w*|whatsapp|почту|e-?mail|письмо)?\s*[,:]?\s*(что|чтобы)?\s*/i, '').trim() || v;
   let subject = '';
   if (AI.ready()) {
