@@ -607,7 +607,7 @@ SCREENS.settings = () => {
     <div class="btns"><button class="btn ghost" onclick="freePhoneMemory()">${t('Освободить память телефона')}</button></div></div>`;
   b += sec(t('Данные')) + `<div class="set-card"><div class="hint" style="margin-top:12px">${t('Резервная копия задач, встреч, контактов и заметок (без файлов).')}</div><div class="btns"><button class="btn ghost" onclick="exportBackup()">${ic('download', 16)} ${t('Скачать копию')}</button><label class="btn ghost">${t('Загрузить копию')}<input type="file" accept=".json,application/json" hidden onchange="importBackup(this.files[0])"></label></div>
     ${window._installPrompt ? `<div class="btns"><button class="btn pri" onclick="installApp()">${t('Установить приложение')}</button></div>` : ''}</div>`;
-  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 4.2</div>`;
+  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 4.2.1</div>`;
   return { top: titleTop(t('Настройки')), body: b, after: async () => { const i = await storageInfo(); const el = $('#st_info'); if (el) el.textContent = t('Занято на телефоне: {a} · файлов: {n}, из них в облаке: {c}', { a: mb(i.used), n: i.n, c: i.cloud }); } };
 };
 async function testAI() { try { toast(t('Проверяю…')); const r = await AI.call([{ text: 'Reply with one word in ' + langName() + ': works' }]); toast(t('AI отвечает: {r} ✓', { r: r.slice(0, 40) }), 3000); } catch (e) { toast(e.message, 5000); } }

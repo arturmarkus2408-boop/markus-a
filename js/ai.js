@@ -97,11 +97,26 @@ const AI = {
   FALLBACK: ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-2.5-flash-lite', 'gemini-flash-lite-latest', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'],
   bad: {},
   key() { return (S.set.aiKey || '').trim(); },
+  /* v4.2.1: Google counts the free DAILY limit separately for EACH model. A model whose day is used up is skipped
+     (until the limit is renewed — at midnight Pacific time) and the next model is tried. The note is kept per key. */
+  spentMap() { try { const x = JSON.parse(localStorage.getItem('markus_ai_spent') || 'null'); return x && x.k === AI.key().slice(-8) ? x.m || {} : {}; } catch (e) { return {}; } },
+  isSpent(model) { return (AI.spentMap()[model] || 0) > Date.now(); },
+  spend(model, until) { try { const m = AI.spentMap(); m[model] = until; localStorage.setItem('markus_ai_spent', JSON.stringify({ k: AI.key().slice(-8), m })); } catch (e) { } },
+  nextReset() {   // the next midnight in Pacific time: that is where Google's day ends
+    try {
+      const p = {}; new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: 'numeric', second: 'numeric', hourCycle: 'h23' }).formatToParts(new Date()).forEach(x => { p[x.type] = +x.value; });
+      return Date.now() + (86400 - (p.hour * 3600 + p.minute * 60 + p.second)) * 1000 + 3 * 60000;
+    } catch (e) { return Date.now() + 6 * 3600000; }
+  },
+  dailyError(until) {
+    const er = new Error(t('Дневной лимит бесплатного AI исчерпан. Лимит обновляется раз в сутки — запись подождёт и обработается сама.'));
+    er.status = 429; er.next = true; er.transient = true; er.daily = true; er.retryAt = until; return er;
+  },
   chain() {
     let good = null, disc = [];
     try { good = localStorage.getItem('markus_ai_good'); disc = (JSON.parse(localStorage.getItem('markus_ai_models') || 'null') || {}).list || []; } catch (e) { }
     const want = (S.set.aiModel || '').trim();
-    return Array.from(new Set([want, good].concat(AI.FALLBACK, disc).filter(Boolean))).filter(m => !AI.bad[m] || Date.now() - AI.bad[m] > 30 * 60000);
+    return Array.from(new Set([want, good].concat(AI.FALLBACK, disc).filter(Boolean))).filter(m => (!AI.bad[m] || Date.now() - AI.bad[m] > 30 * 60000) && !AI.isSpent(m));
   },
   async discover() {
     try {
@@ -144,14 +159,15 @@ const AI = {
     try { r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal }); }
     catch (e) { throw failed(e); }
     if (!r.ok) {
-      let m = '', delay = 0;
-      try { const j = await r.json(); m = (j.error && j.error.message) || ''; const ri = ((j.error && j.error.details) || []).find(d => d && d.retryDelay); if (ri) delay = parseFloat(ri.retryDelay) || 0; } catch (e) { }
+      let m = '', delay = 0, det = '';
+      try { const j = await r.json(); m = (j.error && j.error.message) || ''; det = JSON.stringify((j.error && j.error.details) || ''); const ri = ((j.error && j.error.details) || []).find(d => d && d.retryDelay); if (ri) delay = parseFloat(ri.retryDelay) || 0; } catch (e) { }
       done();
       if (!delay) { const mm = /retry in ([\d.]+)\s*s/i.exec(m); if (mm) delay = parseFloat(mm[1]); }
       const er = new Error('AI ' + r.status + ': ' + m); er.status = r.status; if (delay) er.retry = delay;
       if (r.status === 429) {
         er.message = t('Лимит бесплатного AI на сейчас исчерпан. Попробуйте через минуту.'); er.next = true; er.transient = true;
-        if (/per ?day|PerDay|daily/i.test(m)) { er.daily = true; er.message = t('Дневной лимит бесплатного AI исчерпан. Лимит обновляется раз в сутки — запись подождёт и обработается сама.'); }
+        er.detail = m.slice(0, 400); er.limitModel = model;
+        if (/per ?day|PerDay|daily|limit: ?0\b/i.test(m + ' ' + det)) { er.daily = true; er.message = t('Дневной лимит бесплатного AI исчерпан. Лимит обновляется раз в сутки — запись подождёт и обработается сама.'); }
       }
       else if ((r.status === 400 || r.status === 403) && /API key|API_KEY|permission|PERMISSION/i.test(m)) { er.message = t('Неверный ключ Gemini. Проверьте Настройки → AI.'); er.fatal = true; }
       else if (r.status === 404 || /not found|not supported|deprecated|no longer|unsupported model|is not available/i.test(m)) { er.next = true; er.model = true; }
@@ -181,8 +197,13 @@ const AI = {
       if (opts.signal && opts.signal.aborted) throw abortError();
       let chain = AI.chain(), discovered = false, wait = 0, netDown = false;
       lastErr = null;
-      for (let i = 0; i < chain.length && i < 10 && !netDown; i++) {
+      if (!chain.length) {   // every model has used up its day: no request is sent
+        const sp = Object.values(AI.spentMap()).filter(v => v > Date.now());
+        if (sp.length) throw AI.dailyError(Math.min(...sp));
+      }
+      for (let i = 0; i < chain.length && i < 14 && !netDown; i++) {
         const model = chain[i];
+        if (AI.isSpent(model)) continue;
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
             const res = await AI.callModel(model, parts, opts);
@@ -194,18 +215,19 @@ const AI = {
             if (e.aborted || e.fatal || e.input) throw e;
             if (e.net) { if (!opts.patient) throw e; netDown = true; break; }
             if (e.retry) wait = Math.max(wait, e.retry);
+            if (e.daily) AI.spend(model, AI.nextReset());
             if (e.status >= 500 && attempt === 0) { await sleep(1500); continue; }   // overloaded → one retry
             break;
           }
         }
         if (netDown) break;
-        if (lastErr && lastErr.model) {
-          AI.bad[model] = Date.now();
+        if (lastErr && (lastErr.model || lastErr.daily)) {   // a retired model, or one whose day is used up: look for others in Google's list
+          if (lastErr.model) AI.bad[model] = Date.now();
           if (!discovered) { discovered = true; const list = await AI.discover(); chain = Array.from(new Set(chain.concat(list))); }
         }
         if (!lastErr || !lastErr.next) throw lastErr;
-        if (lastErr.daily && opts.patient) break;   // today's limit is gone — waiting a minute will not bring it back
       }
+      if (lastErr && lastErr.daily) { const sp = Object.values(AI.spentMap()).filter(v => v > Date.now()); lastErr.retryAt = sp.length ? Math.min(...sp) : AI.nextReset(); }   // every model tried today is spent
       if (!opts.patient || !lastErr || !(lastErr.transient || lastErr.net) || lastErr.daily || round === rounds - 1) throw lastErr;
       const sec = Math.min(90, Math.max(15, Math.ceil(wait) + 3) + round * 15);
       if (opts.onWait) opts.onWait(sec, lastErr.net ? 'net' : 'limit', round + 1);
@@ -347,7 +369,7 @@ const AI = {
     if (left.length) {
       const e0 = fails[left[0]];
       const er = new Error(t('Не удалось расшифровать части: {l} из {n}.', { l: left.map(k => k + 1).join(', '), n }) + ' ' + e0.message + ' ' + t('Готовые части сохранены — обработка продолжится с места остановки.'));
-      er.transient = !!(e0.transient || e0.net); er.daily = !!e0.daily; er.input = !!e0.input; er.partial = true; throw er;
+      er.transient = !!(e0.transient || e0.net); er.daily = !!e0.daily; er.retryAt = e0.retryAt; er.detail = e0.detail; er.input = !!e0.input; er.partial = true; throw er;
     }
     return res.map((x, k) => `[${hms(items[k].from)}]\n${x}`).join('\n\n');
   },

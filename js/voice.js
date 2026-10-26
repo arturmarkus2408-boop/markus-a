@@ -604,7 +604,7 @@ function aiBoxHtml(m) {
   if (Processing.has(m.id) && j) return `<div class="ai-box" style="margin-top:8px"><div id="aibox_t_${m.id}">${esc(j.text || t('AI готовит итоги… Можно пользоваться приложением.'))}</div><div class="ai-bar"><i id="aibar_${m.id}" style="width:${j.pct || 0}%"></i></div><button class="link" onclick="aiStop('${m.id}')">${t('Остановить')}</button></div>`;
   if (m.aiState === 'retry' && !m.summary) {
     const at = m.aiRetryAt ? new Date(m.aiRetryAt) : null;
-    return `<div class="ai-box" style="margin-top:8px"><div>${esc(t('AI пока не справился:') + ' ' + (m.aiError || ''))}</div><div class="hint">${esc(t('Повторю сам{t}. Готовые части расшифровки сохранены.', { t: at ? ' ' + t('около') + ' ' + pad(at.getHours()) + ':' + pad(at.getMinutes()) : '' }))}</div><button class="btn pri full" onclick="processMeeting('${m.id}',{resume:true})">${ic('ai', 16)} ${t('Повторить сейчас')}</button></div>`;
+    return `<div class="ai-box" style="margin-top:8px"><div>${esc(t('AI пока не справился:') + ' ' + (m.aiError || ''))}</div><div class="hint">${esc(t('Повторю сам{t}. Готовые части расшифровки сохранены.', { t: at ? ' ' + t('около') + ' ' + pad(at.getHours()) + ':' + pad(at.getMinutes()) : '' }))}</div>${m.aiDetail ? `<div class="hint" style="word-break:break-word">${esc(t('Ответ Google:') + ' ' + m.aiDetail)}</div>` : ''}<button class="btn pri full" onclick="processMeeting('${m.id}',{resume:true})">${ic('ai', 16)} ${t('Повторить сейчас')}</button></div>`;
   }
   return null;
 }
@@ -674,7 +674,7 @@ async function processMeeting(id, o = {}) {
     const key2 = x => String(x.title || '').toLowerCase().replace(/[^a-zа-яё0-9ўқғҳ]+/gi, ' ').trim();
     m.proposed = items.filter(x => x && x.title).map(x => { const old = before.find(b => key2(b) === key2(x)); return Object.assign({ type: 'task' }, x, old ? { state: old.state, itemId: old.itemId } : { state: 'new' }); });
     before.filter(b => !m.proposed.some(x => key2(x) === key2(b))).forEach(b => m.proposed.push(b));
-    delete m.aiError; m.aiTries = 0; delete m.aiState; delete m.aiStage; delete m.aiRetryAt; delete m.aiDev;
+    delete m.aiError; delete m.aiDetail; m.aiTries = 0; delete m.aiState; delete m.aiStage; delete m.aiRetryAt; delete m.aiDev;
     await saveItem(m, { render: false });   // the summary is safe before the next long AI step
     S.meetTab = 'short'; if (S.route === 'meeting' && S.meetingId === id) render();
     // my own review — separately, so a problem here never spoils the summary
@@ -714,9 +714,9 @@ async function processMeeting(id, o = {}) {
       }
       saveItem(m, { render: false });
     } else {
-      m.aiError = e.message; m.aiTries = (m.aiTries || 0) + 1;
+      m.aiError = e.message; m.aiDetail = String(e.detail || '').slice(0, 220); m.aiTries = (m.aiTries || 0) + 1;
       const retry = !!(e && (e.transient || e.net)) && !e.fatal && m.aiTries <= (e.daily ? 8 : 6);
-      if (retry) { m.aiState = 'retry'; m.aiRetryAt = Date.now() + (e.daily ? 120 : Math.min(30, 3 * m.aiTries)) * 60000; }
+      if (retry) { m.aiState = 'retry'; m.aiRetryAt = e.daily ? Math.max(Date.now() + 5 * 60000, e.retryAt || Date.now() + 120 * 60000) + 60000 : Date.now() + Math.min(30, 3 * m.aiTries) * 60000; }
       else { delete m.aiState; delete m.aiRetryAt; }
       saveItem(m, { render: false });
       if (!retry) {
