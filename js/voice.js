@@ -581,16 +581,46 @@ async function recoverRecording() {
   await afterRecording(info.meetingId, blob, info.mime, info.dur || 0, { auto: true });
 }
 
-/* ================= AI processing of meetings ================= */
+/* ================= AI processing of meetings =================
+   v4.2: the job can no longer "hang quietly".
+   · a long recording is cut into 10-minute pieces (audiosplit.js) — see AI.transcribe in ai.js;
+   · the progress is shown on the meeting screen (also for the automatic run);
+   · finished pieces are kept on the device — after any break the job goes on from where it stopped;
+   · a job that stopped moving is restarted by itself; a failure that can pass (no internet, free limit)
+     is retried automatically, a real one is shown with a "Повторить" button. */
 const Processing = new Set();
+const AIJobs = {};   // id → { ac, at, text, pct, stallMs } — what is running right now
+const AI_DEV = (() => { try { let d = localStorage.getItem('markus_dev'); if (!d) { d = uid(); localStorage.setItem('markus_dev', d); } return d; } catch (e) { return 'x'; } })();
+function aiProg(id, text, pct) {
+  const j = AIJobs[id]; if (!j) return;
+  j.at = Date.now(); if (text != null) j.text = text; if (pct != null) j.pct = Math.max(j.pct || 0, pct);
+  const el = document.getElementById('aibox_t_' + id); if (el) el.textContent = j.text || '';
+  const bar = document.getElementById('aibar_' + id); if (bar) bar.style.width = (j.pct || 0) + '%';
+  const sh = document.getElementById('pm_s'); if (sh && j.sheet) sh.textContent = j.text || '';
+}
+/* what the meeting screen shows instead of the "process with AI" button (null = show the button) */
+function aiBoxHtml(m) {
+  const j = AIJobs[m.id];
+  if (Processing.has(m.id) && j) return `<div class="ai-box" style="margin-top:8px"><div id="aibox_t_${m.id}">${esc(j.text || t('AI готовит итоги… Можно пользоваться приложением.'))}</div><div class="ai-bar"><i id="aibar_${m.id}" style="width:${j.pct || 0}%"></i></div><button class="link" onclick="aiStop('${m.id}')">${t('Остановить')}</button></div>`;
+  if (m.aiState === 'retry' && !m.summary) {
+    const at = m.aiRetryAt ? new Date(m.aiRetryAt) : null;
+    return `<div class="ai-box" style="margin-top:8px"><div>${esc(t('AI пока не справился:') + ' ' + (m.aiError || ''))}</div><div class="hint">${esc(t('Повторю сам{t}. Готовые части расшифровки сохранены.', { t: at ? ' ' + t('около') + ' ' + pad(at.getHours()) + ':' + pad(at.getMinutes()) : '' }))}</div><button class="btn pri full" onclick="processMeeting('${m.id}',{resume:true})">${ic('ai', 16)} ${t('Повторить сейчас')}</button></div>`;
+  }
+  return null;
+}
+function aiStop(id) {
+  const j = AIJobs[id]; if (!j) return;
+  j.stopped = true; try { j.ac.abort(); } catch (e) { }
+}
 /* «Обработать заново»: rebuild only the summary, or transcribe the recording again (if the text is incomplete) */
 async function redoMeeting(id) {
   const m = getItem(id); if (!m) return;
-  if (!m.transcript) return processMeeting(id);
+  if (!m.transcript) return processMeeting(id, { resume: true });
   const dur = +(m.recording && m.recording.duration) || 0;
   const stamps = (m.transcript.match(/^\[(\d+:)?\d{2}:\d{2}\]$/gm) || []).length;
   const words = m.transcript.split(/\s+/).length, perMin = dur ? Math.round(words / (dur / 60)) : 0;
-  const thin = dur > 20 * 60 && perMin < 60;   // people say 100–150 words a minute: much less = the text was cut
+  const holes = /\[(этот отрезок не удалось расшифровать|chunk could not be transcribed)/i.test(m.transcript);   // left by the old version when a piece failed
+  const thin = holes || (dur > 20 * 60 && perMin < 60);   // people say 100–150 words a minute: much less = the text was cut
   const v = await dialog({
     title: t('Обработать заново'),
     text: esc(t('Стенограмма: {w} слов на {d} записи.', { w: words, d: fmtDur(dur) })) + (thin ? '<br><b style="color:var(--red)">' + esc(t('Похоже, стенограмма неполная — лучше расшифровать заново.')) + '</b>' : ''),
@@ -603,47 +633,64 @@ async function processMeeting(id, o = {}) {
   if (!AI.ready()) return toast(t('Добавьте ключ Gemini в Настройках → AI'), 4000);
   if (Processing.has(id)) return toast(t('AI уже обрабатывает эту запись…'));
   Processing.add(id);
-  let sh = null, entry = null;
-  if (!o.auto) {
-    sh = openSheet(`<div class="dlg-t">${t('AI обрабатывает встречу')}</div><div class="dlg-x" id="pm_s">${t('Расшифровываю запись… Это может занять 1–3 минуты. Не закрывайте приложение.')}</div><div class="vo-step" style="color:var(--txt2)">${t('Стенограмма')}<i class="spin" id="pm_1"></i></div><div class="vo-step" style="color:var(--txt2)">${t('Анализ и задачи')}<i id="pm_2"></i></div>`, { cls: 'center' });
-    entry = topSheet(); entry.locked = true;
+  const job = AIJobs[id] = { ac: new AbortController(), at: Date.now(), text: t('AI готовит итоги… Можно пользоваться приложением.'), pct: 0, stallMs: 12 * 60000, sheet: false };
+  let sh = null, entry = null, again = false;
+  if (!o.auto && !o.resume) {
+    sh = openSheet(`<div class="dlg-t">${t('AI обрабатывает встречу')}</div><div class="dlg-x" id="pm_s">${t('Расшифровываю запись… Это может занять несколько минут. Не закрывайте приложение.')}</div><div class="vo-step" style="color:var(--txt2)">${t('Стенограмма')}<i class="spin" id="pm_1"></i></div><div class="vo-step" style="color:var(--txt2)">${t('Анализ и задачи')}<i id="pm_2"></i></div><button class="link" style="margin-top:10px" onclick="aiStop('${id}')">${t('Остановить')}</button>`, { cls: 'center' });
+    entry = topSheet(); entry.locked = true; job.sheet = true;
   }
-  const step = (txt) => { if (sh) { $('#pm_1', sh).className = 'ok'; $('#pm_2', sh).className = 'spin'; $('#pm_s', sh).textContent = txt; } };
+  const say = (txt, pct) => aiProg(id, txt, pct);
+  const step2 = () => { if (sh) { $('#pm_1', sh).className = 'ok'; $('#pm_2', sh).className = 'spin'; } };
+  const onWait = (sec, why, round) => say(why === 'net' ? t('Нет связи с AI — жду и пробую снова ({s} сек)…', { s: sec }) : t('Бесплатный лимит AI исчерпан на минуту — жду {s} сек и продолжаю…', { s: sec }), null);
+  const key = 'trjob:' + id;
   try {
-    if (!(o.reuse && m.transcript)) {
+    const finished = m.transcript && (o.reuse || (!o.again && m.aiStage === 'analyze'));
+    m.aiState = 'running'; m.aiDev = AI_DEV; m.aiStage = finished ? 'analyze' : 'transcribe'; delete m.aiRetryAt;
+    await saveItem(m, { render: false });
+    if (S.route === 'meeting' && S.meetingId === id) render();
+    if (!finished) {
+      if (o.again) await DB.del('meta', key).catch(() => { });   // «расшифровать заново»: the earlier pieces are not reused
+      say(t('Готовлю запись для AI…'), 1);
       const blob = await getFileBlob({ id: m.recording.fileId, cloud: m.recording.cloud, parts: m.recording.parts, type: m.recording.mime });
       if (!blob) throw new Error(t('Аудиофайл не найден на этом устройстве'));
       const tr = await AI.transcribe(blob, m.recording.mime, m,
-        pct => sh && ($('#pm_s', sh).textContent = t('Загружаю запись для AI… {p}%', { p: pct })),
-        (k, n) => sh && ($('#pm_s', sh).textContent = t('Расшифровываю запись: часть {k} из {n} (по 10 минут)…', { k, n })));
-      m = getItem(id) || m; m.transcript = tr;   // the meeting may have been edited meanwhile — keep those edits
+        pct => { job.stallMs = 32 * 60000; say(t('Загружаю запись для AI… {p}%', { p: pct }), Math.round(pct / 10)); },
+        null,
+        { key, sig: m.recording.fileId + ':' + blob.size, signal: job.ac.signal, onWait,
+          onProgress: (d, n) => say(t('Расшифровка: готово {k} из {n} частей', { k: d, n }), 2 + Math.round(d / n * 68)) });
+      m = getItem(id) || m; m.transcript = tr; m.aiStage = 'analyze';   // the meeting may have been edited meanwhile — keep those edits
       await saveItem(m, { render: false });
+      DB.del('meta', key).catch(() => { });
     }
-    step(t('Анализирую: темы, планы, цифры, решения, задачи…'));
-    const a = await AI.analyzeMeeting(m);
+    step2();
+    say(t('Анализирую: темы, планы, цифры, решения, задачи…'), 72);
+    const a = await AI.analyzeMeeting(m, { signal: job.ac.signal, onWait, onText: x => say(x, 75),
+      onProgress: (k, n) => say(t('Итоги: часть {k} из {n}', { k: Math.min(k + 1, n), n }), 74 + Math.round(k / n * 14)) });
     m = getItem(id) || m;
     m.summary = a.summary || {};
     const items = Array.isArray(a.items) ? a.items : (a.tasks || []);
     // re-processing must not create the same tasks again
     const before = (m.proposed || []).filter(x => x.state === 'created' || x.state === 'skipped');
-    const key = x => String(x.title || '').toLowerCase().replace(/[^a-zа-яё0-9ўқғҳ]+/gi, ' ').trim();
-    m.proposed = items.filter(x => x && x.title).map(x => { const old = before.find(b => key(b) === key(x)); return Object.assign({ type: 'task' }, x, old ? { state: old.state, itemId: old.itemId } : { state: 'new' }); });
-    before.filter(b => !m.proposed.some(x => key(x) === key(b))).forEach(b => m.proposed.push(b));
+    const key2 = x => String(x.title || '').toLowerCase().replace(/[^a-zа-яё0-9ўқғҳ]+/gi, ' ').trim();
+    m.proposed = items.filter(x => x && x.title).map(x => { const old = before.find(b => key2(b) === key2(x)); return Object.assign({ type: 'task' }, x, old ? { state: old.state, itemId: old.itemId } : { state: 'new' }); });
+    before.filter(b => !m.proposed.some(x => key2(x) === key2(b))).forEach(b => m.proposed.push(b));
+    delete m.aiError; m.aiTries = 0; delete m.aiState; delete m.aiStage; delete m.aiRetryAt; delete m.aiDev;
     await saveItem(m, { render: false });   // the summary is safe before the next long AI step
+    S.meetTab = 'short'; if (S.route === 'meeting' && S.meetingId === id) render();
     // my own review — separately, so a problem here never spoils the summary
     if (S.set.coach !== false && !m.emergency) {
-      if (sh) $('#pm_s', sh).textContent = t('Готовлю разбор: как вы провели встречу…');
-      try { const cc = await AI.coachMeeting(m); m = getItem(id) || m; m.coach = cc; m.coach.at = new Date().toISOString(); delete m.coachErr; } catch (e) { m.coachErr = e.message; }
+      say(t('Готовлю разбор: как вы провели встречу…'), 90);
+      try { const cc = await AI.coachMeeting(m); m = getItem(id) || m; m.coach = cc; m.coach.at = new Date().toISOString(); delete m.coachErr; } catch (e) { if (e && e.aborted) throw e; m = getItem(id) || m; m.coachErr = e.message; }
     }
-    delete m.aiError;
+    delete m.aiState; delete m.aiStage; delete m.aiRetryAt; delete m.aiDev;
     await saveItem(m);
-    if (entry) { entry.locked = false; closeSheet(); }
+    if (entry) { entry.locked = false; closeSheet(); entry = null; }
     S.meetTab = 'short'; if (S.route === 'meeting' && S.meetingId === id) render();
     let created = { tasks: 0, meetings: 0 };
     if (m.proposed.length) {
       if (!m.proposed.some(x => x.state === 'new')) { }
       else if (S.set.autoTasks === 'auto' && !o.reuse && !o.again) created = await reviewProposed(id, true, true);
-      else if (!o.auto) {
+      else if (!o.auto && !o.resume) {
         const fresh = m.proposed.filter(x => x.state === 'new');
         const v = await dialog({ title: t('Найдено новых задач: {n}. Создать?', { n: fresh.length }), text: fresh.map(x => '• ' + esc(x.title) + (x.date ? ' — ' + D.human(x.date) + (x.start || x.dueTime ? ', ' + (x.start || t('до {t}', { t: x.dueTime })) : '') : '')).join('<br>'), buttons: [{ l: t('Создать все'), v: 'all', p: 1 }, { l: t('Проверить по одной'), v: 'one' }, { l: t('Позже'), v: null }] });
         if (v === 'all') created = await reviewProposed(id, true);
@@ -653,14 +700,54 @@ async function processMeeting(id, o = {}) {
     const msg = t('Итоги готовы') + ': ' + m.title + (created.tasks || created.meetings ? ' · ' + t('задач: {a}, встреч: {b}', { a: created.tasks, b: created.meetings }) : '');
     toast(msg, 5000);
     notify(t('Итоги встречи готовы'), msg, { tag: 'sum-' + id, id });
-    if (S.set.sendSummaryTg && Cloud.user && Cloud.profile && Cloud.profile.tg_chat_id) await meetToTelegram(id, true);
-    autoAudioToTelegram(id);
+    // sending to Telegram must never turn a finished summary into an error
+    try { if (S.set.sendSummaryTg && Cloud.user && Cloud.profile && Cloud.profile.tg_chat_id) await meetToTelegram(id, true); } catch (e) { console.error(e); }
+    try { autoAudioToTelegram(id); } catch (e) { console.error(e); }
   } catch (e) {
-    if (entry) { entry.locked = false; closeSheet(); }
-    m.aiError = e.message; saveItem(m, { render: false });
-    if (o.auto) { toast(t('AI не смог обработать запись: {e}', { e: e.message }), 6000); notify(t('AI не смог обработать запись'), e.message, { tag: 'sum-' + id, id }); autoAudioToTelegram(id); }
-    else dialog({ title: t('Не получилось'), text: esc(e.message), buttons: [{ l: t('Понятно'), v: 1, p: 1 }] });
-  } finally { Processing.delete(id); }
+    if (entry) { entry.locked = false; closeSheet(); entry = null; }
+    m = getItem(id) || m;
+    if (e && e.aborted) {
+      if (job.stopped) { m.aiError = t('Остановлено'); delete m.aiState; delete m.aiStage; delete m.aiRetryAt; }
+      else {   // the watchdog stopped a frozen job — it is started again below (but not endlessly)
+        m.aiTries = (m.aiTries || 0) + 1; again = m.aiTries <= 6;
+        if (!again) { m.aiError = t('AI долго не отвечает. Повторю позже — готовые части расшифровки сохранены.'); m.aiState = 'retry'; m.aiRetryAt = Date.now() + 30 * 60000; m.aiTries = 0; }
+      }
+      saveItem(m, { render: false });
+    } else {
+      m.aiError = e.message; m.aiTries = (m.aiTries || 0) + 1;
+      const retry = !!(e && (e.transient || e.net)) && !e.fatal && m.aiTries <= (e.daily ? 8 : 6);
+      if (retry) { m.aiState = 'retry'; m.aiRetryAt = Date.now() + (e.daily ? 120 : Math.min(30, 3 * m.aiTries)) * 60000; }
+      else { delete m.aiState; delete m.aiRetryAt; }
+      saveItem(m, { render: false });
+      if (!retry) {
+        if (o.auto || o.resume) { toast(t('AI не смог обработать запись: {e}', { e: e.message }), 6000); notify(t('AI не смог обработать запись'), e.message, { tag: 'sum-' + id, id }); autoAudioToTelegram(id); }
+        else dialog({ title: t('Не получилось'), text: esc(e.message), buttons: [{ l: t('Понятно'), v: 1, p: 1 }] });
+      } else if (!o.auto && !o.resume) toast(t('AI пока не справился — повторю сам. Можно пользоваться приложением.'), 5000);
+    }
+  } finally {
+    Processing.delete(id); delete AIJobs[id];
+    if (S.route === 'meeting' && S.meetingId === id) render();
+    if (again) setTimeout(() => processMeeting(id, { auto: true, resume: true }), 1500);
+  }
+}
+/* v4.2: looks after the jobs — called at start, when the app comes back, when the internet returns and every 15 seconds.
+   · a job that stopped moving is restarted;  · a job interrupted by closing the app goes on;  · a failed one is retried when its time comes. */
+function resumeAIJobs() {
+  if (!AI.ready() || !S.items) return;
+  const now = Date.now();
+  for (const id of Object.keys(AIJobs)) {
+    const j = AIJobs[id];
+    if (Processing.has(id) && !j.stopped && now - j.at > (j.stallMs || 12 * 60000)) { j.at = now; try { j.ac.abort(); } catch (e) { } }   // the finally-block of processMeeting starts it again
+  }
+  if (Processing.size) return;   // one job at a time keeps within the free limit
+  const m = live().find(x => x.recording && !x.summary && x.aiDev === AI_DEV && (x.aiState === 'running' || (x.aiState === 'retry' && (x.aiRetryAt || 0) <= now)));
+  if (!m) return;
+  if (m.aiState === 'running') {   // the app was closed in the middle of the job; if that keeps happening, stop trying by itself
+    m.aiTries = (m.aiTries || 0) + 1;
+    if (m.aiTries > 6) { delete m.aiState; delete m.aiStage; m.aiTries = 0; m.aiError = t('Обработка прерывалась несколько раз подряд. Нажмите «Обработать AI», чтобы запустить вручную.'); saveItem(m, { render: false }); return; }
+    saveItem(m, { render: false });
+  }
+  processMeeting(m.id, { auto: true, resume: true });
 }
 function proposedToItem(x, m) {
   const from = `${t('Из встречи')} «${m.title}»${m.date ? ' (' + D.human(m.date) + ')' : ''}`;

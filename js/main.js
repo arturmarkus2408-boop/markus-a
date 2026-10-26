@@ -214,13 +214,13 @@ async function boot() {
   }
   handleHash(); window.addEventListener('hashchange', handleHash);
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); window._installPrompt = e; });
-  window.addEventListener('online', () => Cloud.sync());
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { Cloud.sync(); tick(); minuteRefresh(); } });
-  setInterval(() => { tick(); minuteRefresh(); }, 15000);
+  window.addEventListener('online', () => { Cloud.sync(); resumeAIJobs(); });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { Cloud.sync(); tick(); minuteRefresh(); resumeAIJobs(); } });
+  setInterval(() => { tick(); minuteRefresh(); resumeAIJobs(); }, 15000);
   setTimeout(rollReminders, 4000); setInterval(rollReminders, 10 * 60000);
   setInterval(() => Cloud.sync(), 60000);
   tick();
   Cloud.init().then(() => { if (S.route === 'settings') render(); });
-  recoverRecording().then(() => NATIVE ? nativeBoot() : null).then(offerPeskovImport);
+  recoverRecording().then(() => NATIVE ? nativeBoot() : null).then(offerPeskovImport).then(() => setTimeout(resumeAIJobs, 3000));
 }
 boot();

@@ -10,10 +10,45 @@ function meName() { const n = S.set.name && !/@/.test(S.set.name) ? S.set.name :
 function hms(sec) { sec = Math.max(0, Math.round(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60; return (h ? h + ':' + pad(m) : pad(m)) + ':' + pad(s); }
 function outLang() { const L = langCode(); return L === 'ru' ? 'русском' : ({ en: 'English', uz: "o'zbek (lotin)", tr: 'Türkçe', de: 'Deutsch' }[L] || langName(L)); }
 const IN_LANG = () => langCode() === 'ru' ? 'по-русски' : 'на языке: ' + outLang() + ' (язык интерфейса пользователя)';
-function parseJSON(raw) {
-  raw = String(raw || '').replace(/```json|```/g, '').trim();
-  try { return JSON.parse(raw); } catch (e) { const m = raw.match(/\{[\s\S]*\}/); if (m) { try { return JSON.parse(m[0]); } catch (e2) { } } throw new Error(t('AI вернул непонятный ответ')); }
+/* v4.2: an answer that was cut off in the middle (the model ran out of room) is closed by hand:
+   the unfinished last item is dropped, everything before it is kept */
+function repairJSON(s) {
+  const cuts = [], st = []; let inStr = false, esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+    if (c === '"') inStr = true;
+    else if (c === '{' || c === '[') st.push(c);
+    else if (c === '}' || c === ']') st.pop();
+    else if (c === ',') cuts.push([i, st.join('')]);
+  }
+  const close = k => k.split('').reverse().map(x => x === '{' ? '}' : ']').join('');
+  // a text cut inside a word is not kept as it is ("Подготовить дого"): the unfinished item is dropped
+  const tries = (inStr ? [] : [[s.length, st.join(''), false]]).concat(cuts.slice(-80).reverse().map(([i, k]) => [i, k, false]));
+  for (const [i, k, str] of tries) {
+    let body = s.slice(0, i); if (str) body += '"';
+    body = body.replace(/[,:\s]+$/, '');
+    try { return JSON.parse(body + close(k)); } catch (e) { }
+  }
+  return null;
 }
+function parseJSON(raw, meta) {
+  raw = String(raw || '').replace(/```json|```/g, '').trim();
+  try { return JSON.parse(raw); } catch (e) { }
+  const m = raw.match(/\{[\s\S]*\}/); if (m) { try { return JSON.parse(m[0]); } catch (e2) { } }
+  const i = raw.indexOf('{');
+  if (i >= 0) { const r = repairJSON(raw.slice(i)); if (r && typeof r === 'object' && Object.keys(r).length) { if (meta) meta.repaired = true; return r; } }
+  throw new Error(t('AI вернул непонятный ответ'));
+}
+/* the same text repeated over and over (the model sometimes loops on silence) is cut to two lines */
+function squeezeRepeats(s) {
+  const out = []; let last = '', n = 0;
+  for (const ln of String(s || '').split('\n')) { const k = ln.trim().toLowerCase(); if (k && k === last) { if (++n > 2) continue; } else { last = k; n = 1; } out.push(ln); }
+  return out.join('\n');
+}
+function abortError() { const er = new Error(t('Остановлено')); er.aborted = true; return er; }
+/* waits, but wakes up at once when the job is stopped */
+async function sleepJob(ms, signal) { const end = Date.now() + ms; while (Date.now() < end) { if (signal && signal.aborted) throw abortError(); await sleep(Math.min(1000, end - Date.now())); } }
 
 const CMD_PROMPT = `Ты — модуль понимания команд личного ассистента MARKUS-A. Пользователь говорит или пишет на любом языке (русский, узбекский, английский, турецкий, немецкий и др.). title и noteText пиши на том же языке, на котором сказана команда. Разбери команду и верни ТОЛЬКО JSON:
 {
@@ -83,77 +118,128 @@ const AI = {
       return list;
     } catch (e) { return []; }
   },
-  async callModel(model, parts, { json = false, system, temp = 0.2, contents, tools } = {}) {
+  /* v4.2: how many tokens the answer may have (older models allow only 8192) */
+  maxOutFor(model, want) { return /gemini-(2\.5|[3-9])|latest|pro/.test(model) ? Math.min(want, 65000) : Math.min(want, 8192); },
+  /* options: json, system, temp, tools, contents · signal (stop the job) · timeoutMs · maxOut · meta (gets finish/model) */
+  async callModel(model, parts, { json = false, system, temp = 0.2, contents, tools, signal, timeoutMs = 120000, maxOut, meta } = {}) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(AI.key())}`;
     const body = { contents: contents || [{ role: 'user', parts }], generationConfig: { temperature: temp } };
     if (tools) body.tools = tools;
     if (json) body.generationConfig.responseMimeType = 'application/json';
+    if (maxOut) body.generationConfig.maxOutputTokens = AI.maxOutFor(model, maxOut);
     if (system) body.systemInstruction = { parts: [{ text: system }] };
+    if (signal && signal.aborted) throw abortError();
+    // every request has a time limit: a frozen connection can no longer hold the whole job forever
+    const ctl = new AbortController(); let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, timeoutMs);
+    const onAbort = () => ctl.abort(); if (signal) signal.addEventListener('abort', onAbort);
+    const done = () => { clearTimeout(timer); if (signal) signal.removeEventListener('abort', onAbort); };
+    const failed = e => {
+      done();
+      if (signal && signal.aborted) return abortError();
+      if (timedOut) { const er = new Error(t('AI не ответил вовремя')); er.next = true; er.timeout = true; er.transient = true; return er; }
+      const er = new Error(t('Нет связи с AI. Проверьте интернет.')); er.net = true; return er;
+    };
     let r;
-    try { r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
-    catch (e) { const er = new Error(t('Нет связи с AI. Проверьте интернет.')); er.net = true; throw er; }
+    try { r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal }); }
+    catch (e) { throw failed(e); }
     if (!r.ok) {
-      let m = ''; try { m = (await r.json()).error.message; } catch (e) { }
-      const er = new Error('AI ' + r.status + ': ' + m); er.status = r.status;
-      if (r.status === 429) { er.message = t('Лимит бесплатного AI на сейчас исчерпан. Попробуйте через минуту.'); er.next = true; }
+      let m = '', delay = 0;
+      try { const j = await r.json(); m = (j.error && j.error.message) || ''; const ri = ((j.error && j.error.details) || []).find(d => d && d.retryDelay); if (ri) delay = parseFloat(ri.retryDelay) || 0; } catch (e) { }
+      done();
+      if (!delay) { const mm = /retry in ([\d.]+)\s*s/i.exec(m); if (mm) delay = parseFloat(mm[1]); }
+      const er = new Error('AI ' + r.status + ': ' + m); er.status = r.status; if (delay) er.retry = delay;
+      if (r.status === 429) {
+        er.message = t('Лимит бесплатного AI на сейчас исчерпан. Попробуйте через минуту.'); er.next = true; er.transient = true;
+        if (/per ?day|PerDay|daily/i.test(m)) { er.daily = true; er.message = t('Дневной лимит бесплатного AI исчерпан. Лимит обновляется раз в сутки — запись подождёт и обработается сама.'); }
+      }
       else if ((r.status === 400 || r.status === 403) && /API key|API_KEY|permission|PERMISSION/i.test(m)) { er.message = t('Неверный ключ Gemini. Проверьте Настройки → AI.'); er.fatal = true; }
       else if (r.status === 404 || /not found|not supported|deprecated|no longer|unsupported model|is not available/i.test(m)) { er.next = true; er.model = true; }
-      else if (r.status >= 500) er.next = true;
+      else if (r.status >= 500) { er.next = true; er.transient = true; }
       else if (r.status === 400 && /mime|format|unsupported|invalid/i.test(m)) er.input = true;
       throw er;
     }
-    const d = await r.json();
-    AI.lastFinish = (d.candidates && d.candidates[0] && d.candidates[0].finishReason) || '';   // MAX_TOKENS = the answer was cut off
+    let d;
+    try { d = await r.json(); } catch (e) { throw failed(e); }
+    done();
+    const fin = (d.candidates && d.candidates[0] && d.candidates[0].finishReason) || '';
+    AI.lastFinish = fin;   // MAX_TOKENS = the answer was cut off
+    if (meta) { meta.finish = fin; meta.model = model; }
     const text = ((d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts) || []).filter(p => !p.thought).map(p => p.text || '').join('');
     const gm = d.candidates && d.candidates[0] && d.candidates[0].groundingMetadata;   // web search: the pages the answer is based on
     AI.lastSources = gm && gm.groundingChunks ? gm.groundingChunks.map(c => c.web).filter(w => w && w.uri).map(w => ({ title: w.title || w.uri, uri: w.uri })).slice(0, 6) : [];
-    if (!text) { const er = new Error(t('AI вернул пустой ответ')); er.next = true; throw er; }
-    return json ? parseJSON(text) : text.trim();
+    if (!text) { const er = new Error(t('AI вернул пустой ответ')); er.next = true; er.transient = true; throw er; }
+    return json ? parseJSON(text, meta) : text.trim();
   },
+  /* Models are tried one after another. With { patient: true } (long jobs) a wave of failures that can pass —
+     free limit used up, Google overloaded, no connection — is not the end: wait and go round the models again. */
   async call(parts, opts = {}) {
     if (!AI.ready()) throw new Error(t('Добавьте ключ Gemini в Настройках → AI'));
-    let chain = AI.chain(), lastErr = null, discovered = false;
-    for (let i = 0; i < chain.length && i < 10; i++) {
-      const model = chain[i];
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          const res = await AI.callModel(model, parts, opts);
-          try { localStorage.setItem('markus_ai_good', model); } catch (e) { }
-          AI.lastModel = model;
-          return res;
-        } catch (e) {
-          lastErr = e;
-          if (e.fatal || e.net || e.input) throw e;
-          if (e.status >= 500 && attempt === 0) { await sleep(1500); continue; }   // overloaded → one retry
-          break;
+    const rounds = opts.patient ? (opts.rounds || 4) : 1;
+    let lastErr = null;
+    for (let round = 0; round < rounds; round++) {
+      if (opts.signal && opts.signal.aborted) throw abortError();
+      let chain = AI.chain(), discovered = false, wait = 0, netDown = false;
+      lastErr = null;
+      for (let i = 0; i < chain.length && i < 10 && !netDown; i++) {
+        const model = chain[i];
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const res = await AI.callModel(model, parts, opts);
+            try { localStorage.setItem('markus_ai_good', model); } catch (e) { }
+            AI.lastModel = model;
+            return res;
+          } catch (e) {
+            lastErr = e;
+            if (e.aborted || e.fatal || e.input) throw e;
+            if (e.net) { if (!opts.patient) throw e; netDown = true; break; }
+            if (e.retry) wait = Math.max(wait, e.retry);
+            if (e.status >= 500 && attempt === 0) { await sleep(1500); continue; }   // overloaded → one retry
+            break;
+          }
         }
+        if (netDown) break;
+        if (lastErr && lastErr.model) {
+          AI.bad[model] = Date.now();
+          if (!discovered) { discovered = true; const list = await AI.discover(); chain = Array.from(new Set(chain.concat(list))); }
+        }
+        if (!lastErr || !lastErr.next) throw lastErr;
+        if (lastErr.daily && opts.patient) break;   // today's limit is gone — waiting a minute will not bring it back
       }
-      if (lastErr && lastErr.model) {
-        AI.bad[model] = Date.now();
-        if (!discovered) { discovered = true; const list = await AI.discover(); chain = Array.from(new Set(chain.concat(list))); }
-      }
-      if (!lastErr || !lastErr.next) throw lastErr;
+      if (!opts.patient || !lastErr || !(lastErr.transient || lastErr.net) || lastErr.daily || round === rounds - 1) throw lastErr;
+      const sec = Math.min(90, Math.max(15, Math.ceil(wait) + 3) + round * 15);
+      if (opts.onWait) opts.onWait(sec, lastErr.net ? 'net' : 'limit', round + 1);
+      await sleepJob(sec * 1000, opts.signal);
     }
     throw lastErr || new Error(t('AI вернул пустой ответ'));
   },
-  /* big files (long recordings) go through Google's Files API instead of inside the request */
-  async uploadFile(blob, mime, onPct) {
+  /* big files (long recordings) go through Google's Files API instead of inside the request — used only when
+     the recording cannot be cut into pieces */
+  async uploadFile(blob, mime, onPct, signal) {
     const k = encodeURIComponent(AI.key());
-    const start = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${k}`, { method: 'POST', headers: {
+    const fx = async (url, init, ms) => {
+      const ctl = new AbortController(); let to = false; const tm = setTimeout(() => { to = true; ctl.abort(); }, ms);
+      const ab = () => ctl.abort(); if (signal) signal.addEventListener('abort', ab);
+      try { return await fetch(url, Object.assign({ signal: ctl.signal }, init)); }
+      catch (e) { if (signal && signal.aborted) throw abortError(); const er = new Error(to ? t('AI не ответил вовремя') : t('Нет связи с AI. Проверьте интернет.')); er.net = !to; er.transient = true; throw er; }
+      finally { clearTimeout(tm); if (signal) signal.removeEventListener('abort', ab); }
+    };
+    const start = await fx(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${k}`, { method: 'POST', headers: {
       'X-Goog-Upload-Protocol': 'resumable', 'X-Goog-Upload-Command': 'start', 'X-Goog-Upload-Header-Content-Length': String(blob.size),
-      'X-Goog-Upload-Header-Content-Type': mime, 'Content-Type': 'application/json' }, body: JSON.stringify({ file: { display_name: 'markus-a-recording' } }) });
+      'X-Goog-Upload-Header-Content-Type': mime, 'Content-Type': 'application/json' }, body: JSON.stringify({ file: { display_name: 'markus-a-recording' } }) }, 60000);
     const up = start.headers.get('x-goog-upload-url');
     if (!start.ok || !up) throw new Error(t('Не удалось загрузить запись в AI (ошибка {s})', { s: start.status }));
     if (onPct) onPct(10);
-    const r = await fetch(up, { method: 'POST', headers: { 'X-Goog-Upload-Offset': '0', 'X-Goog-Upload-Command': 'upload, finalize' }, body: blob });
+    const r = await fx(up, { method: 'POST', headers: { 'X-Goog-Upload-Offset': '0', 'X-Goog-Upload-Command': 'upload, finalize' }, body: blob }, 25 * 60000);
     if (!r.ok) throw new Error(t('Не удалось загрузить запись в AI (ошибка {s})', { s: r.status }));
     let f = (await r.json()).file;
-    for (let i = 0; i < 60 && f && f.state === 'PROCESSING'; i++) {
-      if (onPct) onPct(Math.min(95, 20 + i * 3));
-      await sleep(3000);
-      const g = await fetch(`https://generativelanguage.googleapis.com/v1beta/${f.name}?key=${k}`); if (g.ok) f = await g.json();
+    for (let i = 0; i < 100 && f && f.state === 'PROCESSING'; i++) {
+      if (onPct) onPct(Math.min(95, 20 + i));
+      await sleepJob(3000, signal);
+      const g = await fx(`https://generativelanguage.googleapis.com/v1beta/${f.name}?key=${k}`, {}, 30000); if (g.ok) f = await g.json();
     }
     if (!f || f.state === 'FAILED') throw new Error(t('AI не смог принять файл записи'));
+    if (f.state === 'PROCESSING') { const er = new Error(t('AI слишком долго готовит файл записи')); er.transient = true; throw er; }
     if (onPct) onPct(100);
     return { file_data: { mime_type: f.mimeType || mime, file_uri: f.uri } };
   },
@@ -163,58 +249,118 @@ const AI = {
     return AI.call([{ text: `${nowContext()}\nКатегории: ${cats}.\nКоманда пользователя: «${text}»` }], { json: true, system: CMD_PROMPT, temp: 0 });
   },
 
-  async transcribe(blob, mime, meeting, onPct, onStep) {
-    const base = (mime || blob.type || 'audio/webm').split(';')[0];
+  PIECE_SEC: 600,   // v4.2: a long recording is cut into pieces of this length (seconds)
+  PAR: 2,           // pieces transcribed at the same time (the free limit allows about 10 requests a minute)
+  trOpts(job, ms) { return { temp: 0, patient: true, signal: job.signal, timeoutMs: ms, maxOut: 16000, onWait: job.onWait }; },
+  trPrompt(meeting) {
     const who = (meeting.participants || []).length ? 'Участники: ' + meeting.participants.join(', ') + ' и владелец записи' + meName() + ' — «Я».' : 'Владелец записи' + meName() + ' — «Я».';
-    const prompt = `Сделай точную стенограмму этой записи ${meeting.emergency ? 'разговора' : 'встречи'} на языке оригинала (русский, узбекский или другой). ${who}
+    return `Сделай точную стенограмму этой записи ${meeting.emergency ? 'разговора' : 'встречи'} на языке оригинала (русский, узбекский или другой). ${who}
 Разделяй реплики по говорящим: «Участник 1:», «Участник 2:» — или по именам, если они понятны из разговора. Расставь знаки препинания, разбей на абзацы. Суммы, даты, сроки, ФИО, номера кабинетов, телефоны и названия компаний пиши точно. Телефон мог лежать далеко или в шумном месте: внимательно расшифруй и тихую, дальнюю речь, реплики вполголоса и фразы на фоне шума; что разобрать невозможно — пометь [неразборчиво], а не пропускай молча. Ничего не добавляй от себя и НИЧЕГО не сокращай — нужна дословная стенограмма, а не пересказ. Верни только текст стенограммы.${(meeting.recording && (meeting.recording.calls || []).length) ? ' Запись ставилась на паузу на время телефонных звонков — на стыках фраза может обрываться, отметь такое место как [пауза].' : ''}`;
+  },
+
+  /* v4.2. A short recording goes in one request. A long one is cut (in the phone, without decoding) into pieces of
+     10 minutes; each piece is a small separate request, so it does not matter how long the meeting was. Finished pieces
+     are kept on the device: after a break (app closed, no internet, limit) the work goes on from where it stopped.
+     job = { key, sig, signal, onProgress(done,total), onWait(sec,why,round) } */
+  async transcribe(blob, mime, meeting, onPct, onStep, job = {}) {
+    const base = (mime || blob.type || 'audio/webm').split(';')[0];
+    const prompt = AI.trPrompt(meeting);
     const dur = Math.round(+(meeting.recording && meeting.recording.duration) || 0);
-    const mt = base === 'audio/webm' ? 'audio/webm' : base;
-    // v3.8: a long meeting is transcribed in 10-minute pieces. In one piece the AI shortened or cut off
-    // the text after ~20–30 minutes, and the summary was then made from a fragment.
-    if (dur > 12 * 60) {
-      if (blob.size > 1900 * 1048576) throw new Error(t('Запись слишком большая для AI'));
-      const part = await AI.uploadFile(blob, mt, onPct);
-      const CH = 10 * 60, n = Math.ceil(dur / CH), out = [];
-      for (let k = 0; k < n; k++) {
-        const a = k * CH, b = Math.min(dur, (k + 1) * CH);
-        if (onStep) onStep(k + 1, n);
-        const prev = out.length ? out[out.length - 1].slice(-1200) : '';
-        const ask = prompt + `\n\nВАЖНО: расшифруй ТОЛЬКО часть записи с ${hms(a)} по ${hms(b)} (${a >= 3600 || b >= 3600 ? 'часы:минуты:секунды' : 'минуты:секунды'}) — полностью, дословно, от первой до последней реплики этого отрезка.` + (prev ? `\nПредыдущий отрезок закончился так (только чтобы одинаково называть говорящих, не повторяй его):\n«…${prev}»` : '');
-        let txt = '';
-        for (let tr = 0; tr < 2 && !txt; tr++) {
-          try { txt = await AI.call([part, { text: ask }], { temp: 0 }); }
-          catch (e) { if (e.fatal || e.net) throw e; if (tr === 0) await sleep(15000); else txt = `[${t('этот отрезок не удалось расшифровать')}: ${e.message}]`; }
-        }
-        out.push(String(txt).trim());
-      }
-      return out.map((x, k) => `[${hms(k * CH)}]\n${x}`).join('\n\n');
+    const whole = dur ? (dur <= 12 * 60 && blob.size <= 14 * 1048576) : blob.size <= 6 * 1048576;
+    if (whole) return AI.transcribeWhole(blob, base, prompt, job);
+    let plan = null;
+    if (typeof AudioSplit !== 'undefined') { try { plan = await AudioSplit.split(blob, AI.PIECE_SEC, { duration: dur }); } catch (e) { console.warn('split:', e.message); } }
+    if (plan && plan.parts.length) {
+      const items = plan.parts.map(p => ({ from: p.from, to: p.to, variants: async () => {
+        const data = await b64(await p.get());
+        return [p.mime].concat(p.mime === 'audio/webm' ? ['video/webm', 'audio/ogg'] : []).map(mt => [{ inline_data: { mime_type: mt, data } }]);
+      } }));
+      try { return await AI.runPieces(items, prompt, job, plan.kind + plan.parts.length, AI.PAR); }
+      catch (e) { if (!e.input || e.aborted) throw e; console.warn('pieces refused, old way:', e.message); }
     }
-    if (blob.size > 14 * 1048576) {
-      if (blob.size > 1900 * 1048576) throw new Error(t('Запись слишком большая для AI'));
-      const part = await AI.uploadFile(blob, mt, onPct);
-      return AI.call([part, { text: prompt }], { temp: 0 });
-    }
+    return AI.transcribeRanges(blob, base, dur, prompt, job, onPct);   // the format could not be cut: the old way
+  },
+  async transcribeWhole(blob, base, prompt, job) {
     const data = await b64(blob);
     const tries = [base];
     if (base === 'audio/webm') tries.push('video/webm', 'audio/ogg');
     if (base === 'audio/mp4') tries.push('audio/aac', 'video/mp4');
     let err;
     for (const mt2 of tries) {
-      try { return await AI.call([{ inline_data: { mime_type: mt2, data } }, { text: prompt }], { temp: 0 }); }
+      try { return squeezeRepeats(await AI.call([{ inline_data: { mime_type: mt2, data } }, { text: prompt }], AI.trOpts(job, 240000))); }
       catch (e) { err = e; if (!e.input && !/mime|format|unsupported|invalid|400/i.test(e.message)) throw e; }
     }
     throw err;
   },
+  /* only for a recording that could not be cut: the whole file stays at Google and each request names the minutes it needs.
+     Every request carries the whole recording, so they go one at a time. */
+  async transcribeRanges(blob, base, dur, prompt, job, onPct) {
+    if (blob.size > 1900 * 1048576) throw new Error(t('Запись слишком большая для AI'));
+    const file = await AI.uploadFile(blob, base, onPct, job.signal);
+    if (!dur) return squeezeRepeats(await AI.call([file, { text: prompt }], AI.trOpts(job, 600000)));
+    const CH = AI.PIECE_SEC, n = Math.ceil(dur / CH);
+    const items = Array.from({ length: n }, (_, k) => ({ from: k * CH, to: Math.min(dur, (k + 1) * CH), range: true, variants: async () => [[file]] }));
+    return AI.runPieces(items, prompt, job, 'r' + n, 1);
+  },
+  async runPieces(items, prompt, job, tag, par) {
+    const n = items.length, key = job.key, sig = (job.sig || '') + ':' + tag;
+    const res = new Array(n).fill(null), saved = {};
+    if (key) { try { const s = await DB.get('meta', key); if (s && s.sig === sig && s.parts) Object.keys(s.parts).forEach(k => { if (+k < n && typeof s.parts[k] === 'string') { res[+k] = s.parts[k]; saved[k] = s.parts[k]; } }); } catch (e) { } }
+    const count = () => res.filter(x => x != null).length;
+    const persist = async () => { if (key) { try { await DB.put('meta', { sig, parts: saved, at: Date.now() }, key); } catch (e) { } } };
+    const report = () => { if (job.onProgress) job.onProgress(count(), n); };
+    report();
+    const one = async k => {
+      const it = items[k];
+      const ask = prompt + (it.range
+        ? `\n\nВАЖНО: расшифруй ТОЛЬКО часть записи с ${hms(it.from)} по ${hms(it.to)} (${it.from >= 3600 || it.to >= 3600 ? 'часы:минуты:секунды' : 'минуты:секунды'}) — полностью, дословно, от первой до последней реплики этого отрезка. Не пиши отметок времени.`
+        : `\n\nЭто фрагмент ${k + 1} из ${n} длинной записи (с ${hms(it.from)} по ${hms(it.to)} от её начала). Расшифруй его ПОЛНОСТЬЮ и дословно, от первой до последней реплики. Говорящих называй одинаково во всех фрагментах («Участник 1», «Участник 2» или по именам, если они прозвучали). Не пиши заголовков, отметок времени и пояснений — только текст стенограммы. Если речи нет — верни «[тишина]».`);
+      let err;
+      for (const parts of await it.variants()) {
+        try { return squeezeRepeats(String(await AI.call(parts.concat([{ text: ask }]), AI.trOpts(job, 240000))).trim()); }
+        catch (e) { err = e; if (!e.input && !/mime|format|unsupported|invalid|400/i.test(e.message)) throw e; }
+      }
+      throw err;
+    };
+    let halted = false;   // today's free limit is gone: further requests would fail the same way
+    const pass = async list => {
+      const fails = {}; let next = 0, stop = null;
+      const worker = async () => {
+        while (!stop && !halted) {
+          const idx = next++; if (idx >= list.length) return;
+          const k = list[idx];
+          try { const txt = await one(k); res[k] = txt; saved[k] = txt; await persist(); report(); }
+          catch (e) { if (e.aborted || e.fatal) { stop = e; return; } fails[k] = e; if (e.daily) halted = true; }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.max(1, Math.min(par || 1, list.length)) }, worker));
+      if (stop) throw stop;
+      return fails;
+    };
+    const todo = []; for (let k = 0; k < n; k++) if (res[k] == null) todo.push(k);
+    let fails = todo.length ? await pass(todo) : {};
+    for (let again = 0; again < 2 && Object.keys(fails).length && !halted; again++) {   // a second and third chance for the pieces that failed
+      await sleepJob(20000 * (again + 1), job.signal);
+      fails = await pass(Object.keys(fails).map(Number));
+    }
+    const left = Object.keys(fails).map(Number);
+    if (left.length) {
+      const e0 = fails[left[0]];
+      const er = new Error(t('Не удалось расшифровать части: {l} из {n}.', { l: left.map(k => k + 1).join(', '), n }) + ' ' + e0.message + ' ' + t('Готовые части сохранены — обработка продолжится с места остановки.'));
+      er.transient = !!(e0.transient || e0.net); er.daily = !!e0.daily; er.input = !!e0.input; er.partial = true; throw er;
+    }
+    return res.map((x, k) => `[${hms(items[k].from)}]\n${x}`).join('\n\n');
+  },
 
-  analyzeMeeting(m) {
+  meetingPrompt(m, text, part) {
     const md = m.date || D.today();
     const me = S.set.name && !/@/.test(S.set.name) ? `«${S.set.name}» (владелец записи, «Я»)` : 'владелец записи («Я»)';
     const kind = m.emergency ? 'Это ЭКСТРЕННАЯ запись разговора (например, визит в госорган, банк, неожиданная беседа). Особенно выдели: что сказали сделать, какие документы нужны, сроки, куда и к кому обратиться (ФИО, должности, кабинеты, телефоны), размеры платежей.' : '';
     const mins = Math.round((+(m.recording && m.recording.duration) || 0) / 60);
-    const size = mins >= 60 ? 'Встреча длинная (' + mins + ' мин): итоги должны быть ПОДРОБНЫМИ — каждая обсуждённая тема отдельным разделом, в каждом разделе 3–10 конкретных пунктов. Краткость здесь вредна: важнее не потерять ни одного плана, цифры, условия и договорённости.'
-      : mins >= 20 ? 'Встреча средней длины (' + mins + ' мин): подробно по каждой теме.' : '';
-    const prompt = `${nowContext()}
+    const size = part ? `Это ЧАСТЬ ${part.k} ИЗ ${part.n} одной длинной встречи (${mins} мин): стенограмма разрезана по времени. Сделай итоги ТОЛЬКО по этой части — подробно, каждая тема отдельным разделом; ничего не придумывай за её пределами. Говорящие «Участник N» в разных частях могут быть разными людьми.`
+      : mins >= 60 ? 'Встреча длинная (' + mins + ' мин): итоги должны быть ПОДРОБНЫМИ — каждая обсуждённая тема отдельным разделом, в каждом разделе 3–10 конкретных пунктов. Краткость здесь вредна: важнее не потерять ни одного плана, цифры, условия и договорённости.'
+        : mins >= 20 ? 'Встреча средней длины (' + mins + ' мин): подробно по каждой теме.' : '';
+    return `${nowContext()}
 Встреча: «${m.title}». ДАТА ВСТРЕЧИ: ${md} (${D.dowFull(D.parse(md).getDay())}), время ${m.start || '—'}–${m.end || '—'}. Участники: ${(m.participants || []).join(', ') || 'не указаны'}. Место: ${m.place || '—'}. Пользователь приложения: ${me}${S.set.aliases ? ' (его также называют: ' + S.set.aliases + ')' : ''}.
 ${kind}
 Ты — опытный помощник юриста и бизнес-аналитик. Прочитай ВСЮ стенограмму от начала до конца и сделай итоги, по которым человек, не бывший на встрече, поймёт всё важное.
@@ -243,8 +389,63 @@ ${size}
 5. Не выдумывай задачи, цифры и время. Не включай то, что уже сделано во время встречи. Пустые разделы — пустой массив [].
 Пиши ${IN_LANG()}.
 СТЕНОГРАММА:
-${(m.transcript || '').slice(0, 600000)}`;
-    return AI.call([{ text: prompt }], { json: true, temp: 0.1 });
+${text}`;
+  },
+  /* v4.2: the summary is made in one go while the text is not huge; if it is — or the answer did not fit — in parts, then joined */
+  async analyzeMeeting(m, o = {}) {
+    const text = String(m.transcript || '');
+    let partial = null;
+    if (text.length <= 150000) {
+      const meta = {};
+      try {
+        const r = await AI.call([{ text: AI.meetingPrompt(m, text, null) }], { json: true, temp: 0.1, patient: true, signal: o.signal, onWait: o.onWait, timeoutMs: 420000, maxOut: 60000, meta });
+        if (!meta.repaired && meta.finish !== 'MAX_TOKENS') return r;
+        partial = r;
+      } catch (e) { if (e.aborted || e.fatal || e.transient || e.net) throw e; }
+      if (o.onText) o.onText(t('Итоги получились очень большими — делаю по частям…'));
+    }
+    try { return await AI.analyzeInParts(m, text, o); }
+    catch (e) { if (partial && !e.aborted && !e.fatal) return partial; throw e; }
+  },
+  /* the text is cut at paragraph borders into parts of about 55 000 characters */
+  segments(text, lim) {
+    const out = []; let cur = '';
+    const push = s => { if (cur && (cur.length + s.length + 2) > lim) { out.push(cur); cur = ''; } cur += (cur ? '\n\n' : '') + s; };
+    for (let p of String(text).split(/\n{2,}/)) {
+      while (p.length > lim) { const i = p.lastIndexOf('\n', lim) > lim / 2 ? p.lastIndexOf('\n', lim) : (p.lastIndexOf(' ', lim) > lim / 2 ? p.lastIndexOf(' ', lim) : lim); push(p.slice(0, i)); p = p.slice(i).trim(); }
+      if (p) push(p);
+    }
+    if (cur) out.push(cur);
+    return out.length ? out : [''];
+  },
+  async analyzeInParts(m, text, o = {}) {
+    const segs = AI.segments(text, 55000), outs = [];
+    for (let k = 0; k < segs.length; k++) {
+      if (o.onProgress) o.onProgress(k, segs.length);
+      const r = await AI.call([{ text: AI.meetingPrompt(m, segs[k], { k: k + 1, n: segs.length }) }], { json: true, temp: 0.1, patient: true, signal: o.signal, onWait: o.onWait, timeoutMs: 360000, maxOut: 30000 });
+      outs.push(r);
+    }
+    if (o.onProgress) o.onProgress(segs.length, segs.length);
+    return AI.mergeSummaries(m, outs, o);
+  },
+  async mergeSummaries(m, outs, o = {}) {
+    const Ss = outs.map(x => (x && x.summary) || {});
+    const cat = key => [].concat(...Ss.map(s => Array.isArray(s[key]) ? s[key] : []));
+    const norm = x => (typeof x === 'string' ? x : JSON.stringify(x)).toLowerCase().replace(/[^a-zа-яё0-9ўқғҳ]+/gi, ' ').trim();
+    const uniq = a => { const seen = new Set(); return a.filter(x => { const k = norm(x); if (!k || seen.has(k)) return false; seen.add(k); return true; }); };
+    const pos = {};
+    Ss.forEach(s => (Array.isArray(s.positions) ? s.positions : []).forEach(p => { if (!p) return; const k = norm(p.who || ''); (pos[k] = pos[k] || { who: p.who || '', stance: [] }); if (p.stance) pos[k].stance.push(p.stance); }));
+    const sum = { short: [], topics: cat('topics'), plans: uniq(cat('plans')), numbers: uniq(cat('numbers')), positions: Object.values(pos).map(p => ({ who: p.who, stance: p.stance.join(' ') })),
+      decisions: uniq(cat('decisions')), commitments: uniq(cat('commitments')), deadlines: uniq(cat('deadlines')), important: uniq(cat('important')), risks: uniq(cat('risks')), questions: uniq(cat('questions')), next: uniq(cat('next')) };
+    try {
+      const r = await AI.call([{ text: `Ниже — главные итоги отдельных частей одной длинной встречи «${m.title}». Объедини их в единый список главных итогов ВСЕЙ встречи: 8–20 пунктов, без повторов; каждый пункт — законченная мысль с конкретикой (цифры, имена, сроки). Пиши ${IN_LANG()}.\nВерни ТОЛЬКО JSON {"short":["…"]}.\n${JSON.stringify(Ss.map((s, i) => ({ часть: i + 1, итоги: s.short || [] })))}` }],
+        { json: true, temp: 0.1, patient: true, signal: o.signal, onWait: o.onWait, timeoutMs: 180000, maxOut: 8000 });
+      if (r && Array.isArray(r.short) && r.short.length) sum.short = r.short;
+    } catch (e) { if (e.aborted || e.fatal) throw e; }
+    if (!sum.short.length) sum.short = uniq([].concat(...Ss.map(s => (Array.isArray(s.short) ? s.short : []).slice(0, 4)))).slice(0, 20);
+    const seen = new Set(), items = [];
+    outs.forEach(x => (Array.isArray(x && x.items) ? x.items : []).forEach(i => { const k = norm((i && i.title) || '') + '|' + ((i && i.date) || ''); if (i && i.title && !seen.has(k)) { seen.add(k); items.push(i); } }));
+    return { summary: sum, items };
   },
 
   /* v3.8: a private review of how the user himself did in the meeting — only for him */

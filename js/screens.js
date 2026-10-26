@@ -274,8 +274,8 @@ SCREENS.meeting = () => {
   if (m.recording) {
     b += `<div class="card" style="margin-top:10px"><div class="h4" style="margin-top:0">${t('Запись')} · ${fmtDur(m.recording.duration || 0)} · ${mb(m.recording.size)}</div>${recCallsHtml(m.recording)}<div id="m_audio"><div class="hint">${t('Загрузка…')}</div></div>
       <div class="btns" style="margin-top:8px"><button class="btn ghost" onclick="shareRec('${m.id}')">${ic('share', 16)} ${t('Поделиться')}</button><button class="btn ghost" onclick="saveRec('${m.id}')">${ic('download', 16)} ${t('В телефон')}</button></div>
-      ${Processing.has(m.id) ? `<div class="ai-box" style="margin-top:8px">${t('AI готовит итоги… Можно пользоваться приложением.')}</div>` : `<button class="btn ${m.transcript ? 'ghost' : 'pri'} full" style="margin-top:8px" onclick="redoMeeting('${m.id}')">${ic('ai', 16)} ${m.transcript ? t('Обработать заново') : t('Обработать AI')}</button>`}
-      ${m.aiError && !m.summary ? `<div class="hint warn">${esc(m.aiError)}</div>` : ''}
+      ${aiBoxHtml(m) || `<button class="btn ${m.transcript ? 'ghost' : 'pri'} full" style="margin-top:8px" onclick="redoMeeting('${m.id}')">${ic('ai', 16)} ${m.transcript ? t('Обработать заново') : t('Обработать AI')}</button>`}
+      ${m.aiError && !m.summary && !Processing.has(m.id) && m.aiState !== 'retry' ? `<div class="hint warn">${esc(m.aiError)}</div>` : ''}
       ${m.summary ? `<button class="btn ghost full" style="margin-top:8px" onclick="speakMeeting('${m.id}')">${ic('play', 16)} ${t('Прослушать итоги')}</button>` : ''}
       <button class="btn ghost full" style="margin-top:8px" onclick="meetAudioToTelegram('${m.id}',false,this)">${ic('send', 16)} ${t('Отправить запись в Telegram')}</button><div id="rtg_${m.id}">${recTgStateHtml(m)}</div>
       <button class="btn danger full" style="margin-top:10px" onclick="deleteFile('${m.id}','rec')">${ic('trash', 16)} ${t('Удалить запись')}</button></div>`;
@@ -607,7 +607,7 @@ SCREENS.settings = () => {
     <div class="btns"><button class="btn ghost" onclick="freePhoneMemory()">${t('Освободить память телефона')}</button></div></div>`;
   b += sec(t('Данные')) + `<div class="set-card"><div class="hint" style="margin-top:12px">${t('Резервная копия задач, встреч, контактов и заметок (без файлов).')}</div><div class="btns"><button class="btn ghost" onclick="exportBackup()">${ic('download', 16)} ${t('Скачать копию')}</button><label class="btn ghost">${t('Загрузить копию')}<input type="file" accept=".json,application/json" hidden onchange="importBackup(this.files[0])"></label></div>
     ${window._installPrompt ? `<div class="btns"><button class="btn pri" onclick="installApp()">${t('Установить приложение')}</button></div>` : ''}</div>`;
-  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 4.1</div>`;
+  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 4.2</div>`;
   return { top: titleTop(t('Настройки')), body: b, after: async () => { const i = await storageInfo(); const el = $('#st_info'); if (el) el.textContent = t('Занято на телефоне: {a} · файлов: {n}, из них в облаке: {c}', { a: mb(i.used), n: i.n, c: i.cloud }); } };
 };
 async function testAI() { try { toast(t('Проверяю…')); const r = await AI.call([{ text: 'Reply with one word in ' + langName() + ': works' }]); toast(t('AI отвечает: {r} ✓', { r: r.slice(0, 40) }), 3000); } catch (e) { toast(e.message, 5000); } }

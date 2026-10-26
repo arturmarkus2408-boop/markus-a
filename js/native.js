@@ -243,7 +243,7 @@ function nativeInstall() {
   window.saveSettings = (...a) => { const r = set0(...a); nativeSyncSoon(); return r; };
   // events from Android
   __native.on('rec', d => { if (d.state === 'stopped') { if (Rec.active && Rec.active.native) Rec.nativeEnded(); else nativeImport(); } else Rec.syncNative(); });
-  __native.on('resume', () => { Rec.syncNative(); nativeImport(); nativeSyncSoon(); if (typeof tick === 'function') tick(); if (S.route === 'settings') render(); });
+  __native.on('resume', () => { Rec.syncNative(); nativeImport(); nativeSyncSoon(); if (typeof tick === 'function') tick(); if (typeof resumeAIJobs === 'function') resumeAIJobs(); if (S.route === 'settings') render(); });
   __native.on('perm', () => { if (S.route === 'settings') render(); });
   __native.on('toast', d => toast(d.text || '', 3500));
 }
