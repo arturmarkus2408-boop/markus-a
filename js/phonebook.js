@@ -55,19 +55,24 @@ function normBday(b) {
 function pbPlan(list) {
   const cs = live().filter(c => c.kind === 'contact');
   const byPhone = new Map(), byName = new Map();
-  cs.forEach(c => { contactPhones(c).forEach(p => { const k = phKey(p); if (k) byPhone.set(k, c); }); byName.set(String(c.title || '').trim().toLowerCase(), c); });
-  const add = [], upd = new Map(); let same = 0;
+  cs.forEach(c => { contactPhones(c).forEach(p => { const k = phKey(p); if (k) byPhone.set(k, c); }); const n = normName(c.title); if (n) byName.set(n, c); });
+  // v4.3.1: a contact you deleted (or a copy merged away) is not brought back from the phone book
+  const gonePh = new Set(), goneName = new Set();
+  S.items.forEach(c => { if (!c.deleted || c.kind !== 'contact') return; contactPhones(c).forEach(p => { const k = phKey(p); if (k) gonePh.add(k); }); const n = normName(c.title); if (n) goneName.add(n); });
+  const add = [], upd = new Map(); let same = 0, gone = 0;
   const seen = new Set();
   for (const r of list) {
     const name = String(r.name || '').trim(); const phones = Array.from(new Set((r.phones || []).map(p => String(p).trim()).filter(Boolean)));
     if (!name && !phones.length) continue;
-    const keys = phones.map(phKey).filter(Boolean);
-    const dupKey = keys[0] || 'n:' + name.toLowerCase(); if (seen.has(dupKey)) continue; seen.add(dupKey);
-    const ex = keys.map(k => byPhone.get(k)).find(Boolean) || (name && byName.get(name.toLowerCase()));
+    const keys = phones.map(phKey).filter(Boolean), nn = normName(name);
+    const dupKey = keys[0] || 'n:' + nn; if (seen.has(dupKey) || keys.some(k => seen.has(k))) continue; keys.forEach(k => seen.add(k)); seen.add(dupKey);
+    const exPh = keys.map(k => byPhone.get(k)).find(Boolean);
+    if (!exPh && (keys.length ? keys.some(k => gonePh.has(k)) : nn && goneName.has(nn))) { gone++; continue; }
+    const ex = exPh || (nn && byName.get(nn));
     if (!ex) { add.push({ r, name: name || phones[0], phones }); continue; }
     const patch = {};
     const have = new Set(contactPhones(ex).map(phKey));
-    const extra = phones.filter(p => !have.has(phKey(p)));
+    const extra = phones.filter(p => !have.has(phKey(p)) && !gonePh.has(phKey(p)));
     ['phone', 'phone2', 'phone3'].forEach(f => { if (!ex[f] && extra.length) patch[f] = extra.shift(); });
     if (!ex.email && (r.emails || [])[0]) patch.email = r.emails[0];
     if (!ex.company && r.org) patch.company = r.org;
@@ -75,7 +80,7 @@ function pbPlan(list) {
     const bd = normBday(r.bday); if (!ex.birthday && bd && !bd.startsWith('1900')) patch.birthday = bd;
     if (Object.keys(patch).length) upd.set(ex.id, Object.assign(upd.get(ex.id) || {}, patch)); else same++;
   }
-  return { add, upd, same };
+  return { add, upd, same, gone };
 }
 async function pbApply(plan) {
   for (const a of plan.add) {
@@ -85,11 +90,19 @@ async function pbApply(plan) {
   for (const [id, patch] of plan.upd) { const c = getItem(id); if (c) { Object.assign(c, patch); await saveItem(c, { render: false }); } }
   try { localStorage.setItem('markus_pb_at', String(Date.now())); } catch (e) { }
 }
+/* v4.3.1: first take what the other phone has already put in the cloud — otherwise both phones
+   add the same people, each its own copy (that is how the duplicates appeared) */
+async function pbCloudFirst() {
+  if (!window.Cloud || !Cloud.user || !navigator.onLine) return;
+  for (let i = 0; i < 40 && Cloud.busy; i++) await new Promise(r => setTimeout(r, 250));
+  try { await Cloud.sync(); } catch (e) { }
+}
 async function pbRun(list, o = {}) {
+  await pbCloudFirst();
   const plan = pbPlan(list);
   if (!plan.add.length && !plan.upd.size) { if (!o.silent) toast(t('Всё уже совпадает: в телефоне {n} контактов, новых нет', { n: list.length }), 4000); try { localStorage.setItem('markus_pb_at', String(Date.now())); } catch (e) { } return; }
   if (!o.silent) {
-    const v = await dialog({ title: t('Контакты из телефона'), text: esc(t('В телефоне: {n}. Новых: {a}. Дополнить существующих: {u}. Уже есть и совпадают: {s}.', { n: list.length, a: plan.add.length, u: plan.upd.size, s: plan.same })) + '<br><span class="muted">' + esc(t('Ваши карточки не перезаписываются — заполняются только пустые поля.')) + '</span>', buttons: [{ l: t('Добавить'), v: 1, p: 1 }, { l: t('Отмена'), v: 0 }] });
+    const v = await dialog({ title: t('Контакты из телефона'), text: esc(t('В телефоне: {n}. Новых: {a}. Дополнить существующих: {u}. Уже есть и совпадают: {s}.', { n: list.length, a: plan.add.length, u: plan.upd.size, s: plan.same })) + (plan.gone ? ' ' + esc(t('Пропущено удалённых вами: {n}.', { n: plan.gone })) : '') + '<br><span class="muted">' + esc(t('Ваши карточки не перезаписываются — заполняются только пустые поля.')) + '</span>', buttons: [{ l: t('Добавить'), v: 1, p: 1 }, { l: t('Отмена'), v: 0 }] });
     if (!v) return;
   }
   await pbApply(plan);

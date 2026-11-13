@@ -404,15 +404,22 @@ async function loadAudio(id) { const b = await recBlob(id); const box = $(`[data
 /* ================= CONTACTS ================= */
 function contactsListHTML() {
   const q = (S.contactQ || '').toLowerCase();
-  const hay = c => [c.title, c.company, c.position, c.phone, c.phone2, c.phone3, c.telegram, c.instagram, c.email, c.carPlate, c.carModel, c.desc, ...(c.addresses || []).map(p => p.address || '')].join(' ').toLowerCase();
-  const cs = live().filter(c => c.kind === 'contact' && (!q || hay(c).includes(q) || digits(hay(c)).includes(digits(q)) && digits(q).length > 3)).sort((a, b) => a.title.localeCompare(b.title));
+  const cs = contactsShown();
   if (!cs.length) return emptyBox('👤', q ? t('Ничего не найдено') : t('Контактов пока нет. Добавьте партнёров — их можно выбирать во встречах.'));
+  // v4.3.1: choose several and delete them at once
+  const sel = S.conSel;
+  if (sel) return `<div class="selbar"><button class="chip ${cs.every(c => sel.has(c.id)) ? 'on' : ''}" onclick="conSelAll()">${ic('check', 13)} ${t('Выбрать все')} (${cs.length})</button><span class="muted" style="font-size:12.5px">${t('Выбрано: {n}', { n: sel.size })}</span></div>
+    <div class="list">${cs.map(c => { const on = sel.has(c.id); return `<div class="ncard frow ${on ? 'sel' : ''}" onclick="conSelToggle('${c.id}')"><span class="fsel">${on ? ic('checkmark', 14) : ''}</span>${avatarHtml(c, 36)}<div class="nmain"><b>${esc(c.title)}</b><span>${esc(contactPhones(c).join(', '))}</span></div></div>`; }).join('')}</div>`;
   // v3.8: call / Telegram / WhatsApp / e-mail straight from the list — one tap
   return `<div class="list">${cs.map(c => `<div class="ncard" data-open="${c.id}">${avatarHtml(c, 40)}<div class="nmain"><b>${esc(c.title)}</b><span>${esc([[c.position, c.company].filter(Boolean).join(', '), contactPhones(c)[0]].filter(Boolean).join(' · '))}${c.birthday && D.diffDays(D.today(), nextBirthday(c.birthday)) <= 14 ? ' · 🎂 ' + esc(D.human(nextBirthday(c.birthday))) : ''}</span></div><div class="c-mini">${contactLinks(c).filter(l => l.i === 'phone' || l.i === (c.telegram ? 'tg' : 'wa')).map(l => `<a class="xbtn" href="${esc(l.u)}" target="${l.i === 'phone' || l.i === 'mail' ? '_self' : '_blank'}" rel="noopener" onclick="event.stopPropagation()" aria-label="${esc(l.l)}">${ic(l.i, 16)}</a>`).join('')}</div></div>`).join('')}</div>`;
 }
 SCREENS.contacts = () => {
-  const b = phonebookCardHTML() + `<div class="search">${ic('search', 18)}<input placeholder="${esc(t('Поиск контактов…'))}" value="${esc(S.contactQ)}" oninput="S.contactQ=this.value;$('#cl').innerHTML=contactsListHTML()"></div><div id="cl">${contactsListHTML()}</div>`;
-  return { top: titleTop(t('Контакты')), body: b, dock: fab('editContact()') };
+  const nd = S.conSel ? 0 : dupesCount();
+  const tools = S.conSel ? '' : `<div class="ctools"><button class="btn ghost" onclick="dupesAnalyze()">${ic('search', 16)} ${t('Анализировать дубли')}${nd ? `<em class="cd-badge">${nd}</em>` : ''}</button></div>`;
+  const b = (S.conSel ? '' : phonebookCardHTML()) + tools + `<div class="search">${ic('search', 18)}<input placeholder="${esc(t('Поиск контактов…'))}" value="${esc(S.contactQ)}" oninput="S.contactQ=this.value;$('#cl').innerHTML=contactsListHTML()"></div><div id="cl">${contactsListHTML()}</div>`;
+  const selBtn = `<button class="tbtn" style="width:auto;padding:0 12px;font-weight:700;font-size:14px;color:var(--acc);display:flex;align-items:center;gap:5px" onclick="S.conSel=S.conSel?null:new Set();render()">${S.conSel ? t('Готово') : ic('check') + ' ' + t('Выбрать')}</button>`;
+  const dock = S.conSel ? `<div class="seldock"><button class="btn ghost" onclick="S.conSel=null;render()">${t('Отмена')}</button><button class="btn danger" style="flex:1" ${S.conSel.size ? '' : 'disabled'} onclick="conDeleteSelected()">${ic('trash', 18)} ${t('Удалить выбранные ({n})', { n: S.conSel.size })}</button></div>` : fab('editContact()');
+  return { top: titleTop(t('Контакты'), { extra: selBtn }), body: b, dock };
 };
 
 /* ================= MY CARD ================= */
@@ -613,7 +620,7 @@ SCREENS.settings = () => {
     <div class="btns"><button class="btn ghost" onclick="freePhoneMemory()">${t('Освободить память телефона')}</button></div></div>`;
   b += sec(t('Данные')) + `<div class="set-card"><div class="hint" style="margin-top:12px">${t('Резервная копия задач, встреч, контактов и заметок (без файлов).')}</div><div class="btns"><button class="btn ghost" onclick="exportBackup()">${ic('download', 16)} ${t('Скачать копию')}</button><label class="btn ghost">${t('Загрузить копию')}<input type="file" accept=".json,application/json" hidden onchange="importBackup(this.files[0])"></label></div>
     ${window._installPrompt ? `<div class="btns"><button class="btn pri" onclick="installApp()">${t('Установить приложение')}</button></div>` : ''}</div>`;
-  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 4.3</div>`;
+  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 4.3.1</div>`;
   return { top: titleTop(t('Настройки')), body: b, after: async () => { const i = await storageInfo(); const el = $('#st_info'); if (el) el.textContent = t('Занято на телефоне: {a} · файлов: {n}, из них в облаке: {c}', { a: mb(i.used), n: i.n, c: i.cloud }); } };
 };
 async function testAI() { try { toast(t('Проверяю…')); const r = await AI.call([{ text: 'Reply with one word in ' + langName() + ': works' }]); toast(t('AI отвечает: {r} ✓', { r: r.slice(0, 40) }), 3000); } catch (e) { toast(e.message, 5000); } }

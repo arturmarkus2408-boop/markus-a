@@ -79,7 +79,7 @@ function openContact(id) {
     ${(c.addresses || []).length ? `<div class="h4">${t('Адреса')}</div><div class="card">${c.addresses.map(addrBlock).join('')}</div>` : ''}
     ${(c.files || []).length ? `<div class="h4">${t('Файлы, фото, документы')}</div>${attList(c.files, c.id, false)}` : ''}
     ${ms.length ? `<div class="h4">${t('Встречи')}</div>${listOf(ms, { showDate: true })}` : ''}
-    <div class="sh-foot"><button class="btn ghost" onclick="shareContact('${id}')" aria-label="vCard">${ic('share', 18)}</button><button class="btn ghost" onclick="contactPdf('${id}')">${ic('pdf', 18)} PDF</button><button class="btn ghost" style="flex:1" onclick="closeSheet();editContact('${id}')">${ic('edit', 18)} ${t('Изменить')}</button></div>`, { cls: 'tall' });
+    <div class="sh-foot"><button class="btn danger" onclick="deleteContact('${id}')" aria-label="${esc(t('Удалить контакт'))}">${ic('trash', 18)}</button><button class="btn ghost" onclick="shareContact('${id}')" aria-label="vCard">${ic('share', 18)}</button><button class="btn ghost" onclick="contactPdf('${id}')">${ic('pdf', 18)} PDF</button><button class="btn ghost" style="flex:1" onclick="closeSheet();editContact('${id}')">${ic('edit', 18)} ${t('Изменить')}</button></div>`, { cls: 'tall' });
 }
 function viewAvatar(id) { const c = getItem(id); if (c && c.avatar) openSheet(`<div class="sh-h"><b>${esc(c.title)}</b><button class="xbtn" onclick="closeSheet()">${ic('x', 18)}</button></div><img src="${c.avatar}" style="width:100%;border-radius:14px">`); }
 function edRenderAddr() {
@@ -128,7 +128,7 @@ function editContact(id, preset) {
       <label class="att-add" style="margin-top:8px">${ic('clip', 16)} ${t('Прикрепить фото или файл')}<input type="file" multiple hidden onchange="edAddFiles(this)"></label>
       <div class="sh-foot">${ex ? `<button class="btn danger" id="c_del">${ic('trash', 18)}</button>` : ''}<button class="btn pri" style="flex:1" id="c_save">${t('Сохранить')}</button></div>`, { cls: 'tall', onClose: () => { if (!saved) res(null); } });
     edRenderFiles(); edRenderAvatar(); edRenderAddr();
-    if ($('#c_del', sh)) $('#c_del', sh).onclick = async () => { if (!(await confirmDel(t('Удалить контакт?')))) return; const x = getItem(C.id); const fm = itemFileMetas(x); await deleteItem(x); purgeFiles(fm); await syncBirthday(Object.assign({}, x, { deleted: true })); saved = true; closeAllSheets(); toast(t('Удалено')); res(null); };
+    if ($('#c_del', sh)) $('#c_del', sh).onclick = async () => { const before = getItem(C.id); await deleteContact(C.id); if (before && before.deleted) { saved = true; res(null); } };
     $('#c_save', sh).onclick = async () => {
       C.title = $('#c_name', sh).value.trim(); if (!C.title) return toast(t('Укажите ФИО'));
       const v = k => $(k, sh).value.trim();
