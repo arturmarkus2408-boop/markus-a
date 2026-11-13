@@ -48,7 +48,11 @@ const ICONS = {
   wa: '<path d="M3.5 20.5 5 16.3A8.5 8.5 0 1 1 8 19.2z"/><path d="M9 8.5c0 3.5 3 6.5 6.5 6.5l1-1.5-2-1-1 .8a4.5 4.5 0 0 1-2.3-2.3l.8-1-1-2z"/>'
 };
 function ic(n, s = 20) { return `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICONS[n] || ''}</svg>`; }
-function logo(s = 28) { return `<img src="icons/icon-192.png" width="${s}" height="${s}" alt="" style="border-radius:${Math.round(s * .26)}px">`; }
+function logo(s = 28) {
+  // v4.3: the business themes use an ink-and-brass monogram instead of the purple icon
+  if (/^exec/.test(document.documentElement.getAttribute('data-pal') || '')) return `<span class="mono" style="width:${s}px;height:${s}px;border-radius:${Math.round(s * .24)}px;font-size:${Math.round(s * .58)}px" aria-hidden="true">M</span>`;
+  return `<img src="icons/icon-192.png" width="${s}" height="${s}" alt="" style="border-radius:${Math.round(s * .26)}px">`;
+}
 
 /* ================= back navigation (top-bar arrow + Android back button) ================= */
 const NavStack = [];
@@ -157,8 +161,7 @@ function row(it, o = {}) {
   return `<div class="row ${done ? 'done' : ''} ${it.status === 'cancelled' ? 'cancel' : ''}" style="--k:${typeof kindColor === 'function' ? kindColor(it) : c.color}" data-open="${it.id}">
     <button class="chk ${done ? 'on' : ''}" style="--c:${c.color}" data-toggle="${it.id}" aria-label="${esc(t('Отметить выполненной'))}">${done ? ic('checkmark', 13) : ''}</button>
     ${tcol}
-    <div class="row-main"><div class="row-title">${it.kind === 'meeting' ? ic('users', 14) + ' ' : ''}${esc(it.title)}</div><div class="row-sub">${sub}</div>${next}${why}</div>
-    ${o.resched ? `<button class="rs-btn" data-resched="${it.id}">${t('Перенести')}</button>` : ''}
+    <div class="row-main"><div class="row-title">${it.kind === 'meeting' ? ic('users', 14) + ' ' : ''}${esc(it.title)}</div><div class="row-sub">${sub}${o.resched ? `<button class="rs-btn" data-resched="${it.id}">${ic('clock', 12)} ${t('Перенести')}</button>` : ''}</div>${next}${why}</div>
     <button class="row-menu" data-menu="${it.id}" aria-label="${esc(t('Действия'))}">${ic('dots', 18)}</button>
   </div>`;
 }
@@ -196,7 +199,7 @@ function attList(files, holderId, editable) {
 const NAV = [['home', 'Главная', 'home'], ['calendar', 'Календарь', 'calendar'], ['tasks', 'Задачи', 'check'], ['notes', 'Заметки', 'note'], ['more', 'Ещё', 'grid']];
 function renderNav() {
   const r = NAV.some(n => n[0] === S.route) ? S.route : 'more';
-  $('#nav').innerHTML = `<div class="nav-logo">${logo(30)}<span>MARKUS-A</span></div>` + NAV.map(([k, l, i]) => `<button class="nav-btn ${r === k ? 'on' : ''}" onclick="${k === 'home' ? 'goHome()' : `go('${k}')`}">${ic(i, 22)}<span>${t(l)}</span></button>`).join('');
+  $('#nav').innerHTML = `<div class="nav-logo">${logo(30)}<span>MARKUS-A</span></div>` + NAV.map(([k, l, i]) => `<button class="nav-btn ${r === k ? 'on' : ''}" onclick="${k === 'home' ? 'goHome()' : `go('${k}')`}">${k === 'tasks' && typeof overdueCount === 'function' && overdueCount() ? `<em class="nav-badge">${Math.min(99, overdueCount())}</em>` : ''}${ic(i, 22)}<span>${t(l)}</span></button>`).join('');
 }
 function go(route, arg) {
   if (route === 'meeting') S.meetingId = arg;
@@ -493,6 +496,7 @@ function renderTaskDetail(id, sh) {
       ${it.repeat && it.repeat.type !== 'none' ? `<span class="pill">${ic('repeat', 14)}${t(REPEAT[it.repeat.type])}</span>` : ''}
       ${(it.reminders || []).length || it.nag ? `<span class="pill">${ic('bell', 14)}${(it.reminders || []).map(m => ((REMIND_OPTS().find(o => o[0] === m) || [0, m + ' ' + t('мин')])[1])).join(', ')}${it.nag ? ' · ' + t('до «Готово»') : ''}</span>` : ''}
     </div>
+    ${doneBarHTML(it)}
     ${p != null ? `<div class="big-pb"><div class="pb big ${it.status === 'cancelled' ? 'cx' : ''}"><i style="width:${p}%"></i></div><b>${p}%</b></div>` : ''}
     ${it.status === 'cancelled' ? `<div class="banner" style="color:var(--txt2)" onclick="tdStatus('${id}','progress')">${ic('x')}<div><b>${t('Задача отменена')} ${it.cancelledAt ? esc(D.human(it.cancelledAt.slice(0, 10))) : ''} · ${t('выполнено {p}%', { p: it.cancelPct || 0 })}</b><span>${it.cancelReason ? t('Причина') + ': ' + esc(it.cancelReason) : t('Причина не указана')} · ${t('нажмите, чтобы вернуть в работу')}</span></div></div>` : ''}
     ${it.status === 'done' ? `<div class="banner" style="color:var(--grn)">${ic('checkmark')}<div><b>${t('Задача выполнена')} ${it.doneAt ? esc(D.human(it.doneAt.slice(0, 10))) : ''}</b><span>${t('Найти её можно в «Задачи → Выполнено»')}</span></div></div>` : ''}

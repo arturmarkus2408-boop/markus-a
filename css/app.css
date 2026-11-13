@@ -547,3 +547,217 @@ i.bspin{width:15px;height:15px;border:2px solid currentColor;border-top-color:tr
 .tts-eq i:nth-child(2){animation-delay:.2s}.tts-eq i:nth-child(3){animation-delay:.4s}
 .tts-eq.off i{animation:none;height:4px}
 @keyframes eq{0%,100%{height:4px}50%{height:14px}}
+
+/* ===== v4.3: tasks from a meeting — approve with a tick, correct with a pencil ===== */
+.prop-card{background:var(--card);border:1px solid var(--brd);border-radius:var(--r);box-shadow:var(--sh);padding:14px 12px 12px;margin:0 0 12px}
+.prop-h{display:flex;align-items:flex-start;gap:10px;padding:0 4px 10px}
+.prop-h>div{flex:1;min-width:0}
+.prop-h b{display:block;font-size:15.5px;font-weight:800;letter-spacing:-.01em}
+.prop-h span{display:block;font-size:12.5px;color:var(--txt2);line-height:1.4;margin-top:3px}
+.prop-list{display:flex;flex-direction:column;gap:6px}
+.prop-row{display:flex;align-items:flex-start;gap:10px;padding:10px 6px 10px 10px;border-radius:12px;border:1px solid var(--brd);background:var(--card2);transition:background .15s,border-color .15s}
+.prop-row.on{background:var(--accs);border-color:color-mix(in srgb,var(--acc) 45%,transparent)}
+.prop-row.made{background:color-mix(in srgb,var(--grn) 8%,var(--card));border-color:color-mix(in srgb,var(--grn) 30%,transparent)}
+.prop-row.skip{opacity:.55}
+.prop-row.skip b{text-decoration:line-through}
+.pchk{width:28px;height:28px;flex-shrink:0;border-radius:8px;border:2px solid color-mix(in srgb,var(--txt3) 70%,transparent);background:var(--card);display:grid;place-items:center;color:#fff;margin-top:1px;transition:background .15s,border-color .15s,transform .1s}
+.pchk:active{transform:scale(.92)}
+.pchk.on{background:var(--acc);border-color:var(--acc)}
+.prop-row.made .pchk{background:var(--grn);border-color:var(--grn)}
+.prop-b{flex:1;min-width:0;cursor:pointer}
+.prop-b b{display:block;font-size:14.5px;font-weight:700;line-height:1.35;word-break:break-word}
+.pti{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:6px;background:color-mix(in srgb,var(--acc) 12%,transparent);color:var(--acc);margin-right:6px;vertical-align:-3px}
+.prop-m{display:block;font-size:12.5px;color:var(--txt2);margin-top:4px}
+.prop-m .due{display:inline-flex;align-items:center;gap:4px;font-weight:700;color:var(--txt)}
+.prop-m .due.past{color:var(--red)}
+.prop-m .due.soon{color:var(--ora)}
+.prop-m .due.none{color:var(--txt3);font-weight:600}
+.prop-m .okc{color:var(--grn);font-weight:700}
+.prop-n{display:block;font-size:12.5px;color:var(--txt3);margin-top:4px;line-height:1.4}
+.prop-ed{width:40px;height:40px;flex-shrink:0;color:var(--txt2);border-radius:10px}
+.prop-ed:active{background:var(--card)}
+.prop-f{display:flex;gap:8px;margin-top:12px}
+.prop-f .btn[disabled]{opacity:.55;filter:grayscale(.4)}
+.prop-f .btn{white-space:nowrap;min-width:0}
+.prop-f .btn.pri{overflow:hidden;text-overflow:ellipsis}
+.prop-f .btn.ghost{padding:12px 14px;flex:0 0 auto}
+
+/* ===== v4.3: «done» — one big obvious button ===== */
+.btn.done-big{background:var(--grn);color:#fff;font-size:15.5px;min-height:52px;border-radius:14px;box-shadow:0 6px 18px color-mix(in srgb,var(--grn) 30%,transparent)}
+.btn.done-big:active{filter:brightness(.95);transform:scale(.99)}
+.donebar{margin:4px 0 12px}
+.mstat{display:flex;align-items:center;gap:10px;margin:2px 0 12px;flex-wrap:wrap}
+.mstat .tag{font-size:12px;padding:5px 9px;display:inline-flex;align-items:center;gap:4px}
+.mstat .btn.done-big{flex:1}
+
+/* ===== v4.3: debt radar ===== */
+.debt{display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--brd);border-radius:var(--r);box-shadow:var(--sh);padding:14px 14px 12px 18px;margin:14px 0 4px;position:relative;overflow:hidden}
+.debt.has{border-color:color-mix(in srgb,var(--red) 28%,var(--brd))}
+.debt::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--grn)}
+.debt.has::before{background:linear-gradient(var(--red),var(--ora))}
+.dr-top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px}
+.dr-num{display:flex;flex-direction:column;align-items:center;min-width:58px}
+.dr-num b{font-size:38px;line-height:1;font-weight:900;letter-spacing:-.03em;color:var(--red);font-variant-numeric:tabular-nums}
+.debt.zero .dr-num b{color:var(--grn)}
+.dr-num span{font-size:10.5px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.04em;margin-top:3px}
+.dr-mood{min-width:0}
+.dr-mood b{display:block;font-size:15px;font-weight:800}
+.dr-mood span{display:block;font-size:12.5px;color:var(--txt2);margin-top:2px;line-height:1.35}
+.dr-rate{display:flex;flex-direction:column;align-items:center;color:var(--txt)}
+.dr-rate span{font-size:9.5px;color:var(--txt3);text-align:center;line-height:1.15;margin-top:1px;font-weight:600}
+.dr-ring{display:block}
+.dr-bar{display:flex;gap:3px;height:9px;margin:12px 0 7px;border-radius:6px;overflow:hidden}
+.dr-bar i{display:block;min-width:8px;border-radius:3px}
+.dr-leg{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--txt2)}
+.dr-leg span{display:inline-flex;align-items:center;gap:5px}
+.dr-leg i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dr-leg b{color:var(--txt);font-weight:800}
+.dr-old{font-size:12px;color:var(--txt3);margin-top:6px}
+.nav-btn{position:relative}
+.nav-badge{position:absolute;top:5px;left:calc(50% + 6px);min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--red);color:#fff;font-size:10.5px;font-weight:800;font-style:normal;line-height:18px;text-align:center;box-shadow:0 0 0 2px var(--card)}
+
+/* ===== v4.3: contacts from the phone ===== */
+.pbcard{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;background:var(--card);border:1px solid var(--brd);border-radius:var(--r);box-shadow:var(--sh);padding:12px 14px;margin:4px 0 12px}
+.pb-ic{width:42px;height:42px;border-radius:12px;background:color-mix(in srgb,var(--grn) 14%,transparent);color:var(--grn);display:grid;place-items:center;flex-shrink:0}
+.pb-b{flex:1;min-width:180px}
+.pb-b b{display:block;font-size:14.5px;font-weight:800}
+.pb-b>span{display:block;font-size:12.5px;color:var(--txt2);margin-top:2px;line-height:1.4}
+.pb-auto{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--txt2);margin-top:8px}
+.pb-btns{display:flex;align-items:center;gap:12px;width:100%}
+.pb-btns .btn{flex:1}
+
+/* ===== v4.3: my library ===== */
+.tile.tile-hero{grid-column:1/-1;flex-direction:row;justify-content:flex-start;gap:14px;padding:16px;font-size:15px;font-weight:800;color:var(--txt);text-align:left}
+.tile.tile-hero .ti{background:var(--grad);color:#fff;width:48px;height:48px}
+.tile-hero .th{display:flex;flex-direction:column;gap:3px;min-width:0}
+.tile-hero .th small{font-size:12px;font-weight:600;color:var(--txt3);line-height:1.35}
+.lib-tabs{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:4px -16px 12px;padding:2px 16px 4px;scroll-snap-type:x proximity;scroll-padding:0 16px}
+.lib-tabs::-webkit-scrollbar{display:none}
+.lib-tab{flex:0 0 auto;min-width:96px;display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:11px 12px;border-radius:14px;background:var(--card);border:1.5px solid var(--brd);text-align:left;scroll-snap-align:start;position:relative}
+.lib-tab .lt-ic{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;background:color-mix(in srgb,var(--c) 14%,transparent);color:var(--c)}
+.lib-tab .lt-l{font-size:12.5px;font-weight:700;color:var(--txt2);line-height:1.2}
+.lib-tab small{position:absolute;top:9px;right:10px;font-size:11px;font-weight:800;color:var(--txt3)}
+.lib-tab.on{border-color:var(--c);background:color-mix(in srgb,var(--c) 7%,var(--card))}
+.lib-tab.on .lt-l{color:var(--txt)}
+.lib-tab.on small{color:var(--c)}
+.lib-list{display:flex;flex-direction:column;gap:8px}
+.lib-card{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:var(--card);border:1px solid var(--brd);border-radius:14px;padding:12px;box-shadow:var(--sh)}
+.lib-card:active{transform:scale(.995)}
+.lib-ic{width:42px;height:42px;border-radius:12px;flex-shrink:0;display:grid;place-items:center;background:color-mix(in srgb,var(--c) 14%,transparent);color:var(--c)}
+.sh-h .lib-ic{width:32px;height:32px;border-radius:10px}
+.lib-b{flex:1;min-width:0;display:flex;flex-direction:column}
+.lib-b b{font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lib-b>span{font-size:12.5px;color:var(--txt2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lib-b .lib-who{color:var(--txt3)}
+.lib-b .lib-d{color:var(--txt3);white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.lib-save{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:10px 0 4px;padding:12px 14px;border-radius:var(--r);border:1.5px dashed color-mix(in srgb,var(--acc) 50%,transparent);background:color-mix(in srgb,var(--acc) 5%,var(--card))}
+.lib-save.saved{border-style:solid;border-color:color-mix(in srgb,var(--grn) 35%,transparent);background:color-mix(in srgb,var(--grn) 6%,var(--card))}
+.lib-save .ls-ic{width:38px;height:38px;border-radius:11px;display:grid;place-items:center;background:var(--grad);color:#fff;flex-shrink:0}
+.lib-save.saved .ls-ic{background:var(--grn)}
+.lib-save .ls-b{flex:1;min-width:150px}
+.lib-save .ls-b b{display:block;font-size:14px;font-weight:800}
+.lib-save .ls-b span{display:block;font-size:12px;color:var(--txt2);margin-top:2px}
+.arc-t{font-size:20px;font-weight:800;line-height:1.25;margin:4px 0 10px}
+.arc-facts{display:flex;flex-direction:column;gap:7px;padding:12px;border-radius:12px;background:var(--card2);font-size:13.5px;color:var(--txt2)}
+.arc-facts div{display:flex;gap:9px;align-items:flex-start}
+.arc-facts .ic{margin-top:2px;color:var(--acc)}
+@media (prefers-reduced-motion:reduce){.pchk,.prop-row,.lib-card{transition:none}}
+
+/* ============================================================================
+   v4.3: «Деловая» theme — ink navy, brass details, warm paper, serif headings.
+   Restrained: solid colours instead of gradients, hairline borders, small radii.
+   ========================================================================== */
+[data-pal=exec]{--bg:#f3f1ec;--card:#fff;--card2:#f7f5f0;--txt:#141922;--txt2:#4b5262;--txt3:#8d929c;--brd:#e2dfd7;
+  --acc:#1f3a5f;--acc2:#b08d57;--accs:#e9edf3;--grad:linear-gradient(135deg,#1f3a5f 0%,#28497a 100%);
+  --red:#b9412c;--ora:#c3742a;--grn:#2e7a58;--blue:#2f5d8c;--ylw:#b38630;--brass:#b08d57;--pri:#1f3a5f;
+  --sh:0 1px 0 rgba(20,25,34,.03),0 1px 3px rgba(20,25,34,.06);--r:12px;--serif:"PT Serif",Georgia,"Times New Roman",serif}
+[data-pal=execd]{--bg:#0d1117;--card:#151b24;--card2:#1b2230;--txt:#eceff4;--txt2:#aab2c0;--txt3:#6d7686;--brd:#262f3d;
+  --acc:#9dbbe2;--acc2:#c9a46a;--accs:#1a2738;--grad:linear-gradient(135deg,#2b4c78 0%,#3a6497 100%);
+  --red:#e0705a;--ora:#e09a55;--grn:#5fb78c;--blue:#7fa6d6;--ylw:#d9b062;--brass:#c9a46a;--pri:#2f568a;
+  --sh:none;--r:12px;--serif:"PT Serif",Georgia,"Times New Roman",serif}
+
+/* type: serif for titles, quiet uppercase labels, tabular numbers */
+:is([data-pal=exec],[data-pal=execd]) :is(.top h1,.hello h2,.td-title,.arc-t,.dlg-t,.sh-h>b){font-family:var(--serif);font-weight:700;letter-spacing:-.005em}
+:is([data-pal=exec],[data-pal=execd]) .hello h2{font-size:27px}
+:is([data-pal=exec],[data-pal=execd]) .sec h3{font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--txt3)}
+:is([data-pal=exec],[data-pal=execd]) .sec .cnt{font-variant-numeric:tabular-nums}
+:is([data-pal=exec],[data-pal=execd]) .brand{font-family:var(--serif);font-weight:700;letter-spacing:.06em}
+:is([data-pal=exec],[data-pal=execd]) .h4{letter-spacing:.07em}
+
+/* surfaces */
+:is([data-pal=exec],[data-pal=execd]) .now{background:var(--card);border:1px solid var(--brd);border-left:3px solid var(--brass);border-radius:var(--r);box-shadow:var(--sh)}
+:is([data-pal=exec],[data-pal=execd]) .now-l{color:var(--brass);text-transform:uppercase;font-size:11px;letter-spacing:.1em;font-weight:800}
+:is([data-pal=exec],[data-pal=execd]) .now-t{font-family:var(--serif);font-size:18px}
+:is([data-pal=exec],[data-pal=execd]) .banner{border-radius:var(--r);box-shadow:none}
+:is([data-pal=exec],[data-pal=execd]) .tile{border-radius:var(--r);box-shadow:var(--sh)}
+:is([data-pal=exec],[data-pal=execd]) .tile .ti{border-radius:10px;background:var(--accs);color:var(--acc)}
+:is([data-pal=exec],[data-pal=execd]) .tile.tile-hero{border-left:3px solid var(--brass)}
+:is([data-pal=exec],[data-pal=execd]) .tile.tile-hero .ti{background:var(--pri);color:#f4e6cc}
+:is([data-pal=exec],[data-pal=execd]) .tile.tile-hero .th b{font-family:var(--serif);font-size:17px}
+
+/* controls: solid ink instead of purple gradients */
+:is([data-pal=exec],[data-pal=execd]) .btn.pri{background:var(--pri);color:#fff;box-shadow:none}
+:is([data-pal=exec],[data-pal=execd]) .btn.pri:active{filter:brightness(1.12)}
+:is([data-pal=exec],[data-pal=execd]) .btn{border-radius:10px}
+:is([data-pal=exec],[data-pal=execd]) .chip{border-radius:8px}
+:is([data-pal=exec],[data-pal=execd]) .chip.on{background:var(--pri);border-color:var(--pri);color:#fff}
+:is([data-pal=exec],[data-pal=execd]) .seg{border-radius:10px}
+:is([data-pal=exec],[data-pal=execd]) .seg button{border-radius:8px}
+:is([data-pal=exec],[data-pal=execd]) .seg button.on{color:var(--txt);box-shadow:0 1px 2px rgba(0,0,0,.08),inset 0 -2px 0 var(--brass)}
+:is([data-pal=exec],[data-pal=execd]) .inp{border-radius:9px}
+:is([data-pal=exec],[data-pal=execd]) .inp:focus{border-color:var(--acc);box-shadow:0 0 0 3px color-mix(in srgb,var(--acc) 15%,transparent)}
+:is([data-pal=exec],[data-pal=execd]) .fab{background:var(--pri);box-shadow:0 6px 16px rgba(20,30,50,.28);border-radius:16px}
+:is([data-pal=exec],[data-pal=execd]) .dk-mic i{background:var(--pri);box-shadow:0 0 0 3px var(--card),0 0 0 4px var(--brass),0 8px 20px rgba(20,30,50,.3)}
+:is([data-pal=exec],[data-pal=execd]) .dock{border-radius:16px}
+:is([data-pal=exec],[data-pal=execd]) .sw.on{background:var(--pri)}
+:is([data-pal=exec],[data-pal=execd]) .link{color:var(--acc)}
+
+/* navigation: an ink active state with a brass tick on top */
+:is([data-pal=exec],[data-pal=execd]) .nav-btn.on{color:var(--acc)}
+:is([data-pal=exec],[data-pal=execd]) .nav-btn.on::before{content:"";position:absolute;top:0;left:50%;width:26px;height:3px;margin-left:-13px;border-radius:0 0 3px 3px;background:var(--brass)}
+:is([data-pal=exec],[data-pal=execd]) .top{background:color-mix(in srgb,var(--bg) 92%,transparent)}
+
+/* the new 4.3 blocks in the same voice */
+:is([data-pal=exec],[data-pal=execd]) .pchk.on{background:var(--pri);border-color:var(--pri)}
+:is([data-pal=exec],[data-pal=execd]) .prop-row.on{background:var(--accs);border-color:color-mix(in srgb,var(--acc) 35%,transparent)}
+:is([data-pal=exec],[data-pal=execd]) .pti{background:var(--accs);color:var(--acc)}
+:is([data-pal=exec],[data-pal=execd]) .prop-h b,:is([data-pal=exec],[data-pal=execd]) .dr-mood b,:is([data-pal=exec],[data-pal=execd]) .lib-save .ls-b b{font-family:var(--serif)}
+:is([data-pal=exec],[data-pal=execd]) .dr-num b{font-family:var(--serif);font-weight:700}
+:is([data-pal=exec],[data-pal=execd]) .debt.has::before{background:linear-gradient(var(--red),var(--brass))}
+:is([data-pal=exec],[data-pal=execd]) .lib-save{border-color:color-mix(in srgb,var(--brass) 60%,transparent);background:color-mix(in srgb,var(--brass) 6%,var(--card))}
+:is([data-pal=exec],[data-pal=execd]) .lib-save .ls-ic{background:var(--pri);color:#f4e6cc}
+:is([data-pal=exec],[data-pal=execd]) .lib-tab{border-radius:10px}
+:is([data-pal=exec],[data-pal=execd]) .lib-tab.on{background:var(--card);box-shadow:inset 0 -3px 0 var(--c)}
+:is([data-pal=exec],[data-pal=execd]) .btn.done-big{background:var(--grn);box-shadow:none;border-radius:10px}
+
+/* splash */
+:is([data-pal=exec],[data-pal=execd]) .splash{background:radial-gradient(120% 80% at 50% 28%,#28497a 0%,#0f1b2d 72%)}
+:is([data-pal=exec],[data-pal=execd]) .splash b{font-family:var(--serif);letter-spacing:.12em}
+:is([data-pal=exec],[data-pal=execd]) .splash span{color:#d7c39b}
+:is([data-pal=exec],[data-pal=execd]) .splash img{box-shadow:0 0 0 1px rgba(201,164,106,.5),0 12px 40px rgba(0,0,0,.45)}
+.mono{display:inline-grid;place-items:center;flex-shrink:0;background:#1f3a5f;color:#e9d7b2;font-family:"PT Serif",Georgia,serif;font-weight:700;box-shadow:inset 0 0 0 1px rgba(201,164,106,.65)}
+[data-pal=execd] .mono{background:#22406a}
+/* v4.3: a long task title is no longer cut to «Подг…» next to the «Перенести» button — up to two lines */
+.row-title{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.3}
+.row-time{width:72px}
+.row-sub .rs-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 9px;font-size:11.5px;border-radius:7px}
+:is([data-pal=exec],[data-pal=execd]) .m-title{font-family:var(--serif);font-weight:700}
+.prop-f{flex-direction:column;align-items:stretch;gap:4px}
+.prop-f .link.prop-skip{align-self:center;padding:8px 12px;color:var(--txt2);font-weight:600}
+/* v4.3: secondary round button keeps its light face in the business themes */
+:is([data-pal=exec],[data-pal=execd]) .fab.sec2{background:var(--card);color:var(--acc);border:1px solid var(--brd);box-shadow:var(--sh)}
+/* v4.3: voice screen in the business colours */
+:is([data-pal=exec],[data-pal=execd]) .dark-ov{background:radial-gradient(120% 80% at 50% 18%,#28497a 0%,#122238 58%,#0b1524 100%)}
+:is([data-pal=exec],[data-pal=execd]) .vo-mic i{background:#1f3a5f;box-shadow:0 0 0 3px rgba(201,164,106,.75),0 14px 40px rgba(0,0,0,.45)}
+:is([data-pal=exec],[data-pal=execd]) .vo-mic::before,:is([data-pal=exec],[data-pal=execd]) .vo-mic::after{border-color:rgba(201,164,106,.45)}
+:is([data-pal=exec],[data-pal=execd]) .vo-h{font-family:var(--serif)}
+:is([data-pal=exec],[data-pal=execd]) .vo-box{color:#d7dce6}
+/* v4.3: «Видео о программе» */
+.promo-v{border-radius:var(--r);overflow:hidden;background:#0d1117;box-shadow:var(--sh);aspect-ratio:16/9}
+.promo-v video{display:block;width:100%;height:100%;object-fit:contain;background:#0d1117}
+.promo-t{font-size:20px;font-weight:800;margin:14px 2px 4px}
+:is([data-pal=exec],[data-pal=execd]) .promo-t{font-family:var(--serif);font-weight:700}
+.promo .btn{margin-top:6px}
+
+/* v4.3: «Сказать MARKUS-A» under the big microphone stays on one line */
+.dk-mic{white-space:nowrap;letter-spacing:-.01em}

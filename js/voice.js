@@ -686,18 +686,9 @@ async function processMeeting(id, o = {}) {
     await saveItem(m);
     if (entry) { entry.locked = false; closeSheet(); entry = null; }
     S.meetTab = 'short'; if (S.route === 'meeting' && S.meetingId === id) render();
-    let created = { tasks: 0, meetings: 0 };
-    if (m.proposed.length) {
-      if (!m.proposed.some(x => x.state === 'new')) { }
-      else if (S.set.autoTasks === 'auto' && !o.reuse && !o.again) created = await reviewProposed(id, true, true);
-      else if (!o.auto && !o.resume) {
-        const fresh = m.proposed.filter(x => x.state === 'new');
-        const v = await dialog({ title: t('Найдено новых задач: {n}. Создать?', { n: fresh.length }), text: fresh.map(x => '• ' + esc(x.title) + (x.date ? ' — ' + D.human(x.date) + (x.start || x.dueTime ? ', ' + (x.start || t('до {t}', { t: x.dueTime })) : '') : '')).join('<br>'), buttons: [{ l: t('Создать все'), v: 'all', p: 1 }, { l: t('Проверить по одной'), v: 'one' }, { l: t('Позже'), v: null }] });
-        if (v === 'all') created = await reviewProposed(id, true);
-        else if (v === 'one') created = await reviewProposed(id, false);
-      }
-    }
-    const msg = t('Итоги готовы') + ': ' + m.title + (created.tasks || created.meetings ? ' · ' + t('задач: {a}, встреч: {b}', { a: created.tasks, b: created.meetings }) : '');
+    // v4.3: tasks are not put into the calendar here — they wait for your tick on the meeting screen
+    const fresh = m.proposed.filter(x => x.state === 'new').length;
+    const msg = t('Итоги готовы') + ': ' + m.title + (fresh ? ' · ' + t('задач на одобрение: {n} — отметьте нужные', { n: fresh }) : '');
     toast(msg, 5000);
     notify(t('Итоги встречи готовы'), msg, { tag: 'sum-' + id, id });
     // sending to Telegram must never turn a finished summary into an error

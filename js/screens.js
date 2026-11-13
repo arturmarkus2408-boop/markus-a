@@ -44,7 +44,8 @@ SCREENS.home = () => {
   if (cur) b += nowCard(t('Сейчас'), cur);
   else if (nx) b += nowCard(t('Далее сегодня'), nx);
   else b += `<div class="now" onclick="openVoice()"><div class="now-b"><div class="now-l">${t('Сейчас')}</div><div class="now-t">${t('Свободное время')}</div><div class="now-s">${ag.some(e => isOpen(e.it)) ? t('Остались задачи без времени') : t('Скажите MARKUS-A, что запланировать')}</div></div>${ic('mic')}</div>`;
-  if (od.length) b += sec(t('Просрочено'), od.length) + `<div class="list">${od.slice(0, 5).map(i => row(i, { showDate: true, resched: true })).join('')}</div>`;
+  if (S.items.some(i => !i.deleted && isTaskKind(i))) b += debtCardHTML();
+  if (od.length) b += sec(t('Самые свежие долги'), Math.min(5, od.length) + ' / ' + od.length) + `<div class="list">${od.slice(0, 5).map(i => row(i, { showDate: true, resched: true })).join('')}</div>`;
   const lim = Math.max(3, +S.set.homeLimit || 6), shown = S.homeAll ? ag : ag.slice(0, lim);
   const openCnt = ag.filter(e => isOpen(e.it)).length;
   b += sec(t('Сегодня'), openCnt + ' ' + tn(openCnt, 'задача|задачи|задач'), `<button class="sortbtn" onclick="S.set.homeSort=S.set.homeSort==='time'?'prio':'time';saveSettings();render()">${ic('sort', 14)} ${S.set.homeSort === 'time' ? t('по времени') : t('по важности')}</button>`);
@@ -226,9 +227,9 @@ SCREENS.notes = () => {
 
 /* ================= MORE ================= */
 SCREENS.more = () => {
-  const tiles = [['chat', 'Чат с AI', 'ai'], ['drive', 'За рулём', 'play'], ['help', 'Инструкция', 'note'], ['meetings', 'Встречи', 'users'], ['recordings', 'Записи', 'rec'], ['contacts', 'Контакты', 'user'], ['docs', 'Документы', 'folder'], ['fav', 'Избранное', 'star'], ['search', 'Поиск и AI', 'search'], ['card', 'Моя визитка', 'qr'], ['pdf', 'PDF-выгрузка', 'pdf'], ['slot', 'Свободное окно', 'clock'], ['voice', 'Голос', 'mic'], ['settings', 'Настройки', 'settings']];
+  const tiles = [['library', 'Моя библиотека', 'folder'], ['promo', 'Видео о программе', 'play'], ['chat', 'Чат с AI', 'ai'], ['drive', 'За рулём', 'play'], ['help', 'Инструкция', 'note'], ['meetings', 'Встречи', 'users'], ['recordings', 'Записи', 'rec'], ['contacts', 'Контакты', 'user'], ['docs', 'Документы', 'folder'], ['fav', 'Избранное', 'star'], ['search', 'Поиск и AI', 'search'], ['card', 'Моя визитка', 'qr'], ['pdf', 'PDF-выгрузка', 'pdf'], ['slot', 'Свободное окно', 'clock'], ['voice', 'Голос', 'mic'], ['settings', 'Настройки', 'settings']];
   const act = { slot: 'openSlotFinder()', voice: 'openVoice()', pdf: "openPdfExport('today')" };
-  const b = `<div class="tiles">${tiles.map(([k, l, i]) => `<button class="tile" onclick="${act[k] || `go('${k}')`}"><span class="ti">${ic(i, 22)}</span>${t(l)}</button>`).join('')}</div>
+  const b = `<div class="tiles">${tiles.map(([k, l, i]) => `<button class="tile ${k === 'library' ? 'tile-hero' : ''}" onclick="${act[k] || `go('${k}')`}"><span class="ti">${ic(i, 22)}</span>${k === 'library' ? `<span class="th"><b>${t(l)}</b><small>${t('Архивы встреч · документы · ссылки · аудио · видео')}</small></span>` : t(l)}</button>`).join('')}</div>
     <div style="text-align:center;margin-top:30px">${logo(56)}<div style="font-weight:800;font-size:20px;margin-top:10px">MARKUS-A</div><div class="muted" style="font-size:13px">${t('Больше, чем просто календарь.')}<br>${t('Думай. Говори. Действуй.')}</div></div>`;
   return { top: titleTop(t('Ещё')), body: b };
 };
@@ -247,10 +248,11 @@ SCREENS.meeting = () => {
   const c = catOf(m), recOn = Rec.active && Rec.active.meetingId === m.id;
   const cs = (m.contactIds || []).map(getItem).filter(x => x && !x.deleted);
   const extra = (m.participants || []).filter(n => !cs.some(x => x.title === n));
-  let b = `<div style="display:flex;gap:8px;align-items:flex-start;margin:4px 0 8px"><div style="font-size:22px;font-weight:800;line-height:1.25;flex:1">${esc(m.title)}</div><button class="tbtn" onclick="speakItem('${m.id}')" aria-label="${esc(t('Озвучить'))}" title="${esc(t('Озвучить'))}">${ic('play')}</button></div>
+  let b = `<div style="display:flex;gap:8px;align-items:flex-start;margin:4px 0 8px"><div class="m-title" style="font-size:22px;font-weight:800;line-height:1.25;flex:1">${esc(m.title)}</div><button class="tbtn" onclick="speakItem('${m.id}')" aria-label="${esc(t('Озвучить'))}" title="${esc(t('Озвучить'))}">${ic('play')}</button></div>
     <div class="kv">${ic('calendar', 16)}${esc(m.date ? D.long(m.date) : t('Без даты'))}${m.start ? ' · ' + esc(timeLabel(m)) : ''}</div>
     ${m.place ? `<div class="kv">${ic('pin', 16)}${esc(m.place)}</div>` : ''}
     <div class="pills"><span class="cat" style="--t:${c.color}">${esc(catName(c))}</span>${m.priority !== 'normal' ? `<span class="tag" style="--t:${PRIO[m.priority].c}">${t(PRIO[m.priority].l)}</span>` : ''}${m.autoRecord ? `<span class="tag red">● ${t('Автозапись')}</span>` : ''}${m.status === 'done' ? `<span class="tag grn">${t('Завершена')}</span>` : ''}</div>`;
+  b += meetStatusHTML(m);
   if (m.needsTime && !m.start && m.date) b += `<div class="banner" style="color:var(--ora)" onclick="askMeetingTime('${m.id}')">${ic('clock')}<div><b>${t('Время встречи не указано')}</b><span>${t('Нажмите, чтобы указать время и включить автозапись')}</span></div>${ic('right')}</div>`;
   if (recBlocked === m.id && !recOn && !m.recording) b += `<div class="banner" style="color:var(--red)" onclick="recBlocked=null;Rec.start('${m.id}')">${ic('mic')}<div><b>${t('Автозапись не запустилась')}</b><span>${t('Браузер не дал доступ к микрофону. Нажмите здесь, чтобы начать, и выберите «Разрешить всегда».')}</span></div></div>`;
   if ((m.locations || []).length) b += `<div class="card"><div class="h4" style="margin-top:0">${t('Локации')} (${m.locations.length})</div>${placesBlock(m)}</div>`;
@@ -283,8 +285,11 @@ SCREENS.meeting = () => {
   if (m.summary || m.transcript) {
     const tabs = [['short', 'Кратко'], ['topics', 'Темы'], ['dec', 'Решения'], ['tasks', 'Задачи']].concat(m.coach ? [['coach', '🔒 Мой разбор']] : []).concat([['tr', 'Стенограмма']]);
     if (!tabs.some(x => x[0] === S.meetTab)) S.meetTab = 'short';
-    b += sec(t('AI-итоги встречи')) + `<div class="seg seg-scroll">${tabs.map(([k, l]) => `<button class="${S.meetTab === k ? 'on' : ''}" onclick="S.meetTab='${k}';render()">${t(l)}${k === 'tasks' && (m.proposed || []).length ? ' (' + m.proposed.length + ')' : ''}</button>`).join('')}</div><div class="card">${meetTab(m)}</div>`;
+    b += sec(t('AI-итоги встречи'));
+    if (propCounts(m).fresh && S.meetTab !== 'tasks') b += proposalsHTML(m);
+    b += `<div class="seg seg-scroll">${tabs.map(([k, l]) => `<button class="${S.meetTab === k ? 'on' : ''}" onclick="S.meetTab='${k}';render()">${t(l)}${k === 'tasks' && (m.proposed || []).length ? ' (' + m.proposed.length + ')' : ''}</button>`).join('')}</div><div class="card">${meetTab(m)}</div>`;
     if (m.summary) b += `<button class="btn pri full" onclick="meetToTelegram('${m.id}',false,this)">${ic('send', 16)} ${t('Отправить итоги в Telegram')}</button><div id="tgst_${m.id}">${tgStateHtml(m)}</div>`;
+    b += libMeetingBtnHTML(m);
   }
   const menu = `<button class="tbtn" onclick="meetFav('${m.id}')">${ic(m.fav ? 'starf' : 'star')}</button><button class="tbtn" onclick="openShare('${m.id}')" aria-label="${esc(t('Поделиться'))}">${ic('share')}</button><button class="tbtn" onclick="openItemPdf('${m.id}')" aria-label="PDF">${ic('pdf')}</button><button class="tbtn" onclick="openEditor('meeting',{id:'${m.id}'})" aria-label="${esc(t('Изменить'))}">${ic('edit')}</button><button class="tbtn" style="color:var(--red)" onclick="deleteItemFull('${m.id}')" aria-label="${esc(t('Удалить'))}">${ic('trash')}</button>`;
   return {
@@ -325,7 +330,8 @@ function meetTab(m) {
   }
   if (S.meetTab === 'coach') return coachHTML(m);
   if (S.meetTab === 'dec') return `<div class="h4" style="margin-top:0">${t('Решения')}</div>${bl(s.decisions)}<div class="h4">${t('Обязательства')}</div>${bl((s.commitments || []).map(c => `${c.who ? c.who + ': ' : ''}${c.what}${c.due ? ' (' + t('срок') + ': ' + c.due + ')' : ''}`))}<div class="h4">${t('Сроки')}</div>${bl(s.deadlines)}<div class="h4">${t('Риски и нерешённое')}</div>${bl(s.risks)}<div class="h4">${t('Следующие шаги')}</div>${bl(s.next)}`;
-  if (S.meetTab === 'tasks') {
+  if (S.meetTab === 'tasks') return proposalsHTML(m);
+  if (S.meetTab === 'tasks-old') {
     const p = m.proposed || [];
     if (!p.length) return `<div class="hint">${t('AI не нашёл поручений в этой встрече')}</div>`;
     return p.map((x, i) => `<div class="sub" style="align-items:flex-start"><span style="flex:1"><b style="font-size:14px">${x.type === 'meeting' ? '👥 ' : x.type === 'control' ? '👁 ' : ''}${esc(x.title)}</b><br><span class="muted" style="font-size:12px">${esc(x.date ? D.human(x.date) : t('без даты'))}${x.start ? ', ' + x.start : ''}${x.dueTime ? ', ' + t('до') + ' ' + x.dueTime : ''}${x.who ? ' · ' + esc(x.who) : ''}</span></span>
@@ -353,7 +359,7 @@ async function meetToTelegram(id, silent, btn) {
   const L = (ttl, a) => a && a.length ? `\n\n<b>${h(ttl)}</b>\n` + a.map(x => '• ' + h(typeof x === 'string' ? x : `${x.who ? x.who + ': ' : ''}${x.what || ''}${x.due ? ' (' + x.due + ')' : ''}`)).join('\n') : '';
   const made = (m.proposed || []).filter(x => x.state === 'created').map(x => { const it = getItem(x.itemId); return it ? (it.kind === 'meeting' ? '👥 ' : '☐ ') + it.title + ' — ' + whenLabel(it) : null; }).filter(Boolean);
   const topics = (s.topics || []).map(x => `${x.title}${x.result ? ' → ' + x.result : ''}`);
-  const tx = `📋 <b>${h(t('Итоги встречи'))}: ${h(m.title)}</b>\n${h(m.date ? D.human(m.date) : '')} ${h(timeLabel(m))}` + L(t('Кратко'), s.short) + L(t('Темы'), topics) + L(t('Планы и этапы'), s.plans) + L(t('Цифры и суммы'), s.numbers) + L(t('Решения'), s.decisions) + L(t('Обязательства'), s.commitments) + L(t('Сроки'), s.deadlines) + L(t('Открытые вопросы'), s.questions) + L(t('Следующие шаги'), s.next) + L(t('Добавлено в планы'), made);
+  const tx = `📋 <b>${h(t('Итоги встречи'))}: ${h(m.title)}</b>\n${h(m.date ? D.human(m.date) : '')} ${h(timeLabel(m))}` + L(t('Кратко'), s.short) + L(t('Темы'), topics) + L(t('Планы и этапы'), s.plans) + L(t('Цифры и суммы'), s.numbers) + L(t('Решения'), s.decisions) + L(t('Обязательства'), s.commitments) + L(t('Сроки'), s.deadlines) + L(t('Открытые вопросы'), s.questions) + L(t('Следующие шаги'), s.next) + L(t('Добавлено в планы'), made) + L(t('Задачи и сроки — ждут вашего одобрения в MARKUS-A'), (m.proposed || []).filter(x => x.state === 'new').map(x => x.title + ' — ' + propWhen(x).txt));
   const run = async () => {
     try {
       await Cloud.sendTelegram(tx.slice(0, 30000)); m.tg = { at: new Date().toISOString(), ok: true };
@@ -405,7 +411,7 @@ function contactsListHTML() {
   return `<div class="list">${cs.map(c => `<div class="ncard" data-open="${c.id}">${avatarHtml(c, 40)}<div class="nmain"><b>${esc(c.title)}</b><span>${esc([[c.position, c.company].filter(Boolean).join(', '), contactPhones(c)[0]].filter(Boolean).join(' · '))}${c.birthday && D.diffDays(D.today(), nextBirthday(c.birthday)) <= 14 ? ' · 🎂 ' + esc(D.human(nextBirthday(c.birthday))) : ''}</span></div><div class="c-mini">${contactLinks(c).filter(l => l.i === 'phone' || l.i === (c.telegram ? 'tg' : 'wa')).map(l => `<a class="xbtn" href="${esc(l.u)}" target="${l.i === 'phone' || l.i === 'mail' ? '_self' : '_blank'}" rel="noopener" onclick="event.stopPropagation()" aria-label="${esc(l.l)}">${ic(l.i, 16)}</a>`).join('')}</div></div>`).join('')}</div>`;
 }
 SCREENS.contacts = () => {
-  const b = `<div class="search">${ic('search', 18)}<input placeholder="${esc(t('Поиск контактов…'))}" value="${esc(S.contactQ)}" oninput="S.contactQ=this.value;$('#cl').innerHTML=contactsListHTML()"></div><div id="cl">${contactsListHTML()}</div>`;
+  const b = phonebookCardHTML() + `<div class="search">${ic('search', 18)}<input placeholder="${esc(t('Поиск контактов…'))}" value="${esc(S.contactQ)}" oninput="S.contactQ=this.value;$('#cl').innerHTML=contactsListHTML()"></div><div id="cl">${contactsListHTML()}</div>`;
   return { top: titleTop(t('Контакты')), body: b, dock: fab('editContact()') };
 };
 
@@ -576,7 +582,7 @@ SCREENS.settings = () => {
     <label class="lbl">${t('Модель')}</label><input class="inp" value="${esc(st.aiModel)}" onchange="setVal('aiModel',this.value.trim()||'gemini-2.5-flash')">
     <div class="hint">${t('Если Google отключит эту модель или закончится её бесплатный лимит, MARKUS-A сам переключится на другую доступную модель Gemini.')}${AI.lastModel ? ' ' + t('Сейчас работает: {m}', { m: esc(AI.lastModel) }) : ''}</div>
     <div class="btns"><button class="btn ghost" onclick="testAI()">${t('Проверить AI')}</button></div>
-    <label class="lbl">${t('Задачи из встреч')}</label><div class="seg"><button class="${st.autoTasks === 'confirm' ? 'on' : ''}" onclick="setVal('autoTasks','confirm');render()">${t('С подтверждением')}</button><button class="${st.autoTasks === 'auto' ? 'on' : ''}" onclick="setVal('autoTasks','auto');render()">${t('Автоматически')}</button></div>
+    <label class="lbl">${t('Задачи из встреч')}</label><div class="hint">${t('После итогов встречи задачи и сроки показываются списком с галочками. В календарь попадает только то, что вы отметили; карандаш — поправить перед добавлением.')}</div>
     <div class="sw-row"><div><b>${t('Отвечать голосом')}</b><span>${t('MARKUS-A озвучивает ответы на голосовые команды')}</span></div><button class="sw ${st.voiceReply ? 'on' : ''}" onclick="setVal('voiceReply',!S.set.voiceReply);render()"></button></div>
     <label class="lbl">${t('Сколько ждать тишины, прежде чем обработать голос')}</label><select class="inp" onchange="setVal('voiceSilence',+this.value)">${[3, 5, 7, 10].map(n => `<option value="${n}" ${(+st.voiceSilence || 5) === n ? 'selected' : ''}>${n} ${t('сек')}</option>`).join('')}</select>
     <label class="lbl">${t('Голос ответов')}</label><select class="inp" onchange="setVal('ttsVoice',this.value);TTS.cache.clear()">${TTS_VOICES.map(([k, l]) => `<option value="${k}" ${(st.ttsVoice || 'Charon') === k ? 'selected' : ''}>${t(l)}</option>`).join('')}</select>
@@ -607,7 +613,7 @@ SCREENS.settings = () => {
     <div class="btns"><button class="btn ghost" onclick="freePhoneMemory()">${t('Освободить память телефона')}</button></div></div>`;
   b += sec(t('Данные')) + `<div class="set-card"><div class="hint" style="margin-top:12px">${t('Резервная копия задач, встреч, контактов и заметок (без файлов).')}</div><div class="btns"><button class="btn ghost" onclick="exportBackup()">${ic('download', 16)} ${t('Скачать копию')}</button><label class="btn ghost">${t('Загрузить копию')}<input type="file" accept=".json,application/json" hidden onchange="importBackup(this.files[0])"></label></div>
     ${window._installPrompt ? `<div class="btns"><button class="btn pri" onclick="installApp()">${t('Установить приложение')}</button></div>` : ''}</div>`;
-  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 4.2.1</div>`;
+  b += `<div class="hint" style="text-align:center;margin:20px 0">MARKUS-A · ${t('версия')} 4.3</div>`;
   return { top: titleTop(t('Настройки')), body: b, after: async () => { const i = await storageInfo(); const el = $('#st_info'); if (el) el.textContent = t('Занято на телефоне: {a} · файлов: {n}, из них в облаке: {c}', { a: mb(i.used), n: i.n, c: i.cloud }); } };
 };
 async function testAI() { try { toast(t('Проверяю…')); const r = await AI.call([{ text: 'Reply with one word in ' + langName() + ': works' }]); toast(t('AI отвечает: {r} ✓', { r: r.slice(0, 40) }), 3000); } catch (e) { toast(e.message, 5000); } }

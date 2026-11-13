@@ -6,6 +6,7 @@ function applyTheme() {
   document.documentElement.setAttribute('data-pal', th[0] === 'light' || th[0] === 'dark' ? '' : th[0]);
   const m = $('meta[name=theme-color]'); if (m) m.content = th[4];
   try { if (NATIVE && typeof NATIVE.setStatusBar === 'function') NATIVE.setStatusBar(th[4]); } catch (e) { }   // Android status bar in the theme colour
+  const sp = document.querySelector('#splash img, #splash .mono'); if (sp) sp.outerHTML = logo(84);
 }
 
 /* ================= reminders & auto-record ticker ================= */
@@ -221,6 +222,6 @@ async function boot() {
   setInterval(() => Cloud.sync(), 60000);
   tick();
   Cloud.init().then(() => { if (S.route === 'settings') render(); });
-  recoverRecording().then(() => NATIVE ? nativeBoot() : null).then(offerPeskovImport).then(() => setTimeout(resumeAIJobs, 3000));
+  recoverRecording().then(() => NATIVE ? nativeBoot() : null).then(offerPeskovImport).then(() => setTimeout(resumeAIJobs, 3000)).then(() => setTimeout(pbDaily, 6000));
 }
 boot();

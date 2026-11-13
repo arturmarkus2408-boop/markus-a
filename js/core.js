@@ -92,10 +92,10 @@ const DEFAULT_CATS = [
 ];
 const DEFAULT_NOTE_CATS = ['Идеи', 'Работа', 'Личные', 'Документы'];
 const DEFAULTS = {
-  name: '', theme: 'light', lang: 'ru', workStart: '09:00', workEnd: '19:00', defaultDur: 60,
+  name: '', theme: 'exec', lang: 'ru', workStart: '09:00', workEnd: '19:00', defaultDur: 60,
   morningTime: '09:30', eveTime: '19:00', dayEnd: '22:00', nagHours: 1,
   homeSort: 'time', homeLimit: 6, defaultRemind: [30],
-  aiKey: '', aiModel: 'gemini-2.5-flash', voiceReply: true, autoTasks: 'auto',
+  aiKey: '', aiModel: 'gemini-2.5-flash', voiceReply: true, autoTasks: 'confirm',
   autoRecDefault: true, recPre: 2, recPost: 30, recDiscreet: true, autoAI: true, recMaxMin: 180,
   sendSummaryTg: true, cloudOnly: false, speechRate: 1, recQuality: 'high', recMode: 'auto', sendAudioTg: true, recHere: true,
   sbUrl: '', sbKey: '', botName: '',
@@ -110,6 +110,8 @@ const DEFAULTS = {
 };
 /* [key, name, preview colour 1, preview colour 2, browser bar colour] */
 const THEMES = [
+  ['exec', 'Деловая', '#f3f1ec', '#1f3a5f', '#1f3a5f', false, ['#1f3a5f', '#b08d57', '#141922', '#f3f1ec']],
+  ['execd', 'Деловая ночь', '#0d1117', '#c9a46a', '#0d1117', true, ['#0d1117', '#2f568a', '#c9a46a', '#eceff4']],
   ['light', 'Светлая', '#f4f5fb', '#5b4dff', '#5b4dff'],
   ['warm', 'Тёплая', '#f7f0e6', '#c2622d', '#c2622d'],
   ['dark', 'Тёмная', '#0b0e1a', '#7c6cff', '#0b0e1a'],
@@ -129,6 +131,8 @@ function loadSettings() {
   if (!Array.isArray(S.set.categories) || !S.set.categories.length) S.set.categories = clone(DEFAULT_CATS);
   if (!Array.isArray(S.set.noteCats) || !S.set.noteCats.length) S.set.noteCats = clone(DEFAULT_NOTE_CATS);
   // v3: meeting-recording & AI defaults the owner asked for (applied once over older saved settings)
+  // v4.3: the new business design is switched on once (the old themes stay in Настройки → Тема)
+  if (!s.v43) { S.set.theme = S.set.theme === 'dark' || S.set.theme === 'bronze' || S.set.theme === 'neon' ? 'execd' : 'exec'; S.set.v43 = 1; try { localStorage.setItem(SET_KEY, JSON.stringify(S.set)); } catch (e) { } }
   if (!s.v3) { Object.assign(S.set, { autoTasks: 'auto', autoRecDefault: true, recDiscreet: true, autoAI: true, v3: 1 }); try { localStorage.setItem(SET_KEY, JSON.stringify(S.set)); } catch (e) { } }
 }
 function saveSettings() { localStorage.setItem(SET_KEY, JSON.stringify(S.set)); if (window.Cloud && Cloud.user) Cloud.savePrefs(); }
