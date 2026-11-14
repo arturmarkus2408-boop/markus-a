@@ -816,3 +816,6 @@ i.bspin{width:15px;height:15px;border:2px solid currentColor;border-top-color:tr
 .lib-pick{display:flex;align-items:center;gap:8px;text-align:left;font:inherit;font-size:14px;padding:10px 12px;border:1px solid var(--brd);border-radius:12px;background:var(--card);color:var(--txt);cursor:pointer}
 .lib-pick span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lib-pick small{color:var(--txt3)}
+/* 4.4.1: finished-only day dot; filter chips wrap on wide screens instead of hiding off the edge */
+.wd-dots i.fin{background:var(--txt3,#b9b4aa);opacity:.6}
+@media (min-width:760px){#screen > .chips{flex-wrap:wrap;overflow:visible}}

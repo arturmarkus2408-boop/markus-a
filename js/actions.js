@@ -270,13 +270,15 @@ function kindColor(it) { return it.priority === 'critical' ? KIND_C.crit : it.pr
 function calLegend() { return `<div class="cal-legend"><span><i style="background:${KIND_C.meeting}"></i>${t('Встреча')}</span><span><i style="background:${KIND_C.task}"></i>${t('Задача')}</span><span><i style="background:${KIND_C.high}"></i>${t('Важно')}</span><span><i style="background:${KIND_C.crit}"></i>${t('Срочно')}</span></div>`; }
 function dayCounts(d) {
   const ag = dayAgenda(d).filter(e => !e.cont && e.it.status !== 'cancelled');
-  return { open: ag.filter(e => isOpen(e.it)), meet: ag.filter(e => e.it.kind === 'meeting' && isOpen(e.it)).length, task: ag.filter(e => e.it.kind !== 'meeting' && isOpen(e.it)).length };
+  const all = dayAgenda(d).filter(e => !e.cont);
+  return { open: ag.filter(e => isOpen(e.it)), meet: ag.filter(e => e.it.kind === 'meeting' && isOpen(e.it)).length, task: ag.filter(e => e.it.kind !== 'meeting' && isOpen(e.it)).length,
+    fin: all.filter(e => !e.subs && !isOpen(e.it)).length, done: all.filter(e => e.it.status === 'done').length, canc: all.filter(e => e.it.status === 'cancelled').length };
 }
 function weekStrip2() {
   const ws = D.weekStart(S.selDate), td = D.today();
   return `<div class="wstrip">${[0, 1, 2, 3, 4, 5, 6].map(k => {
     const d = D.add(ws, k), c = dayCounts(d);
-    const dots = (c.meet ? `<i style="background:${KIND_C.meeting}"></i>` : '') + (c.task ? `<i style="background:${KIND_C.task}"></i>` : '');
+    const dots = (c.meet ? `<i style="background:${KIND_C.meeting}"></i>` : '') + (c.task ? `<i style="background:${KIND_C.task}"></i>` : '') || (c.fin ? '<i class="fin"></i>' : '');
     return `<button class="wd ${d === td ? 'today' : ''} ${d === S.selDate ? 'sel' : ''}" onclick="S.selDate='${d}';render()">${D.dow(D.parse(d).getDay())}<b>${D.parse(d).getDate()}</b><span class="wd-dots">${dots || '<i class="no"></i>'}</span></button>`;
   }).join('')}</div>`;
 }
@@ -303,17 +305,19 @@ function dayAgendaHTML(d, o = {}) {
     });
     if (!o.compact && cur < we && d >= D.today()) rows += freeGap(d, cur, we);
     b += `<div class="cal-h">${t('По времени')}</div><div class="list">${rows}</div>`;
-  } else if (!untimed.length && !o.compact) b += `<div class="empty"><b>🌿</b>${t('Свободный день')}${d >= D.today() ? `<br><button class="btn ghost" style="margin-top:10px" onclick="openEditor('task',{date:'${d}'})">+ ${t('Добавить задачу')}</button>` : ''}</div>`;
+  } else if (!untimed.length && !o.compact && !fin.length) b += `<div class="empty"><b>🌿</b>${t('Свободный день')}${d >= D.today() ? `<br><button class="btn ghost" style="margin-top:10px" onclick="openEditor('task',{date:'${d}'})">+ ${t('Добавить задачу')}</button>` : ''}</div>`;
   if (fin.length) {
-    const openF = S.calDone;
-    b += `<button class="more-btn" onclick="S.calDone=!S.calDone;render()">${openF ? ic('up', 16) : ic('down', 16)} ${t('Выполнено и отменено')} (${fin.length})</button>`;
+    // past days and days with nothing left open show finished items right away (otherwise the day looks empty)
+    const openF = S.calDone != null ? S.calDone : (d < D.today() || !act.length);
+    b += `<button class="more-btn" onclick="S.calDone=${!openF};render()">${openF ? ic('up', 16) : ic('down', 16)} ${t('Выполнено и отменено')} (${fin.length})</button>`;
     if (openF) b += `<div class="list">${agendaRows(fin)}</div>`;
   }
   return b;
 }
 function calDayView() {
   const d = S.selDate, c = dayCounts(d);
-  const sum = [c.meet ? tn(c.meet, 'встреча|встречи|встреч').replace(/^/, c.meet + ' ') : '', c.task ? tn(c.task, 'задача|задачи|задач').replace(/^/, c.task + ' ') : ''].filter(Boolean).join(' · ');
+  const sum = [c.meet ? tn(c.meet, 'встреча|встречи|встреч').replace(/^/, c.meet + ' ') : '', c.task ? tn(c.task, 'задача|задачи|задач').replace(/^/, c.task + ' ') : '',
+    c.done ? t('выполнено: {n}', { n: c.done }) : '', c.canc ? t('отменено: {n}', { n: c.canc }) : ''].filter(Boolean).join(' · ');
   return weekStrip2() + `<div class="cal-day-h"><b>${esc(cap(D.long(d)))}</b><span>${esc(sum || t('Ничего не запланировано'))}</span></div>` + calLegend() + dayAgendaHTML(d);
 }
 function calWeekView() {

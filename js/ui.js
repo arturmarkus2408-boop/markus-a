@@ -217,12 +217,26 @@ function render() {
   renderNav();
   const fn = SCREENS[S.route] || SCREENS.home;
   const r = fn();
+  const chipX = S.route === S._chipRoute ? [...document.querySelectorAll('#screen .chips')].map(c => c.scrollLeft) : [];
+  S._chipRoute = S.route;
   $('#top').innerHTML = r.top || '';
   $('#screen').innerHTML = r.body || '';
+  keepChipsInView(chipX);
   $('#dock').innerHTML = r.dock || '';
   if (S.route !== 'drive' && typeof driveWake !== 'undefined' && driveWake) driveWakeOff();
   if (typeof recDot === 'function') recDot();
   if (r.after) r.after();
+}
+// filter chip rows scroll sideways: keep their position after a re-render and keep the selected chip visible
+function keepChipsInView(prev) {
+  document.querySelectorAll('#screen .chips').forEach((c, i) => {
+    if (c.scrollWidth <= c.clientWidth) return;
+    if (prev[i] != null) c.scrollLeft = prev[i];
+    const on = c.querySelector('.chip.on'); if (!on) return;
+    const cr = c.getBoundingClientRect(), or = on.getBoundingClientRect();
+    if (or.left < cr.left) c.scrollLeft -= cr.left - or.left + 16;
+    else if (or.right > cr.right) c.scrollLeft += or.right - cr.right + 16;
+  });
 }
 document.addEventListener('click', e => {
   const x = e.target.closest('[data-menu],[data-toggle],[data-resched],[data-subdone],[data-open]');
