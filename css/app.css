@@ -788,3 +788,31 @@ i.bspin{width:15px;height:15px;border:2px solid currentColor;border-top-color:tr
 .cd-tag{font-style:normal;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:var(--txt2);flex-shrink:0}
 .cd-row.keep .cd-tag{color:var(--grn)}
 .cd-row.keep{background:color-mix(in srgb,var(--grn) 7%,transparent)}
+
+/* v4.4 — chat: attachments, export, tables */
+.chat-in{flex-wrap:wrap}
+.chat-att{flex-basis:100%;display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+.chat-att[hidden]{display:none}
+.att-chip{display:inline-flex;align-items:center;gap:5px;flex-shrink:0;max-width:240px;background:var(--card2);border:1px solid var(--brd);border-radius:10px;padding:5px 4px 5px 9px;font-size:12.5px;color:var(--txt)}
+.att-chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.att-chip small{color:var(--txt3);font-size:11px;white-space:nowrap}
+.att-chip button{border:0;background:none;color:var(--txt3);font-size:13px;width:24px;height:24px;border-radius:50%;cursor:pointer;flex-shrink:0}
+.chat-in .att-btn{color:var(--txt2)}
+.chat-list.with-att{padding-bottom:170px}
+.cb-att{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:6px}
+.cb-att button{font:inherit;font-size:12px;border:0;border-radius:8px;padding:4px 8px;background:rgba(255,255,255,.2);color:inherit;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cb-h{font-weight:700;margin-top:4px}
+.cb-li{display:flex;gap:6px;padding-left:2px}
+.cb-li.l2{padding-left:20px}
+.cb-li>span:first-child{flex-shrink:0;min-width:10px;color:var(--txt3)}
+.cb-gap{height:7px}
+.cb-hr{border:0;border-top:1px solid var(--brd);margin:8px 0}
+.cb-tw{overflow-x:auto;margin:6px 0;max-width:100%}
+.cb-t{border-collapse:collapse;font-size:13px;min-width:100%}
+.cb-t th,.cb-t td{border:1px solid var(--brd);padding:5px 7px;text-align:left;vertical-align:top}
+.cb-t th{background:var(--card2);font-weight:600}
+.cb-act .cb-exp{color:var(--acc);font-weight:600}
+.chat-lib{display:flex;flex-direction:column;gap:6px}
+.lib-pick{display:flex;align-items:center;gap:8px;text-align:left;font:inherit;font-size:14px;padding:10px 12px;border:1px solid var(--brd);border-radius:12px;background:var(--card);color:var(--txt);cursor:pointer}
+.lib-pick span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lib-pick small{color:var(--txt3)}
